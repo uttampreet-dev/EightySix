@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -132,7 +133,7 @@ export function KitchenClient({
       <header className="sticky top-0 z-10 -mx-4 border-b border-border/60 bg-background/90 px-4 py-4 backdrop-blur">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-semibold tracking-tight">Kitchen</h1>
+            <h1 className="font-serif text-2xl font-medium tracking-tight">Kitchen</h1>
             <p className="text-xs text-muted-foreground">{restaurant.name}</p>
           </div>
           <div className="flex items-center gap-2">
@@ -146,7 +147,7 @@ export function KitchenClient({
 
       <div className="mt-6 grid gap-8 lg:grid-cols-[1fr_420px]">
         <section>
-          <h2 className="mb-3 text-sm font-medium uppercase tracking-widest text-muted-foreground">
+          <h2 className="mb-3 font-mono text-[11px] uppercase tracking-[0.25em] text-muted-foreground">
             Order queue
           </h2>
           {orders.length === 0 ? (
@@ -156,8 +157,17 @@ export function KitchenClient({
             </p>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2">
+              <AnimatePresence initial={false}>
               {orders.map((order) => (
-                <div key={order.id} className="rounded-lg border bg-card p-4">
+                <motion.div
+                  key={order.id}
+                  layout
+                  initial={{ opacity: 0, y: 16, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.96 }}
+                  transition={{ type: "spring", stiffness: 320, damping: 28 }}
+                  className="rounded-lg border bg-card p-4"
+                >
                   <div className="flex items-center justify-between">
                     <span className="font-medium">
                       Table {order.tables?.label ?? "—"}
@@ -189,14 +199,15 @@ export function KitchenClient({
                   >
                     {order.status === "placed" ? "Start cooking" : "Mark served"}
                   </Button>
-                </div>
+                </motion.div>
               ))}
+              </AnimatePresence>
             </div>
           )}
         </section>
 
         <section>
-          <h2 className="mb-3 text-sm font-medium uppercase tracking-widest text-muted-foreground">
+          <h2 className="mb-3 font-mono text-[11px] uppercase tracking-[0.25em] text-muted-foreground">
             86 board — stock
           </h2>
           <div className="space-y-1.5">
@@ -236,9 +247,15 @@ export function KitchenClient({
                       size="sm"
                       variant="outline"
                       className="h-7 px-2 text-xs"
-                      onClick={() => stock(ingredient, "restock", 5)}
+                      onClick={() =>
+                        stock(
+                          ingredient,
+                          "restock",
+                          Math.max(0.5, Number(ingredient.reorder_level) * 2)
+                        )
+                      }
                     >
-                      +5
+                      Restock
                     </Button>
                     <Button
                       size="sm"

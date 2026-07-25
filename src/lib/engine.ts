@@ -148,6 +148,21 @@ export type DishRisk = DishAvailability & {
 };
 
 export const RISK_ALERT_MINUTES = 45;
+// Beyond this horizon a dish isn't "at risk", it's just selling.
+export const RISK_HORIZON_MINUTES = 480;
+
+export const CATEGORY_ORDER = [
+  "Tandoor & Starters",
+  "Curries",
+  "Breads",
+  "Rice & Biryani",
+  "Beverages & Desserts",
+];
+
+export function categoryRank(category: string): number {
+  const i = CATEGORY_ORDER.indexOf(category);
+  return i === -1 ? CATEGORY_ORDER.length : i;
+}
 
 export async function getDishRisk(
   supabase: SupabaseClient,
@@ -162,10 +177,17 @@ export async function getDishRisk(
   return data ?? [];
 }
 
-// Dishes actively dying (has velocity, will run out), soonest first.
+// Dishes actively dying (has velocity, will run out within the horizon),
+// soonest first.
 export function atRiskDishes(risk: DishRisk[]): DishRisk[] {
   return risk
-    .filter((d) => d.is_active && d.minutes_to_86 !== null && d.minutes_to_86 > 0)
+    .filter(
+      (d) =>
+        d.is_active &&
+        d.minutes_to_86 !== null &&
+        d.minutes_to_86 > 0 &&
+        d.minutes_to_86 <= RISK_HORIZON_MINUTES
+    )
     .sort((a, b) => a.minutes_to_86! - b.minutes_to_86!);
 }
 

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import {
   availabilityState,
+  categoryRank,
   formatINR,
   getAvailability,
   type DishAvailability,
@@ -141,16 +142,14 @@ export function MenuClient({
   }, [restaurant.id, refetch]);
 
   const categories = useMemo(() => {
-    const order: string[] = [];
     const byCategory = new Map<string, DishAvailability[]>();
     for (const dish of dishes) {
-      if (!byCategory.has(dish.category)) {
-        byCategory.set(dish.category, []);
-        order.push(dish.category);
-      }
+      if (!byCategory.has(dish.category)) byCategory.set(dish.category, []);
       byCategory.get(dish.category)!.push(dish);
     }
-    return order.map((name) => ({ name, dishes: byCategory.get(name)! }));
+    return [...byCategory.entries()]
+      .sort(([a], [b]) => categoryRank(a) - categoryRank(b))
+      .map(([name, categoryDishes]) => ({ name, dishes: categoryDishes }));
   }, [dishes]);
 
   const cartEntries = useMemo(() => {
@@ -205,7 +204,7 @@ export function MenuClient({
       <header className="sticky top-0 z-10 -mx-4 border-b border-border/60 bg-background/90 px-4 py-4 backdrop-blur">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold tracking-tight">
+            <h1 className="font-serif text-2xl font-medium tracking-tight">
               {restaurant.name}
             </h1>
             {restaurant.tagline && (
@@ -223,10 +222,13 @@ export function MenuClient({
       </header>
 
       {categories.map(({ name, dishes: categoryDishes }) => (
-        <section key={name} className="mt-8">
-          <h2 className="mb-3 text-sm font-medium uppercase tracking-widest text-muted-foreground">
-            {name}
-          </h2>
+        <section key={name} className="mt-10">
+          <div className="mb-4 flex items-center gap-3">
+            <h2 className="shrink-0 font-mono text-[11px] uppercase tracking-[0.25em] text-muted-foreground">
+              {name}
+            </h2>
+            <div className="h-px flex-1 bg-border" />
+          </div>
           <div className="grid gap-3 sm:grid-cols-2">
             {categoryDishes.map((dish) => {
               const state = availabilityState(dish);
@@ -235,16 +237,24 @@ export function MenuClient({
               return (
                 <div
                   key={dish.id}
-                  className={`rounded-lg border bg-card p-4 transition-all duration-500 ${
-                    out ? "opacity-45 saturate-0" : ""
+                  className={`rounded-lg border bg-card p-4 transition-all duration-700 ${
+                    out
+                      ? "opacity-45 saturate-0"
+                      : "hover:border-brass/25 hover:shadow-[0_2px_16px_-8px_oklch(0.8_0.1_84/0.25)]"
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <VegMark veg={dish.veg} />
-                      <h3 className="font-medium leading-tight">{dish.name}</h3>
+                      <h3
+                        className={`font-serif text-[17px] leading-tight ${
+                          out ? "line-through decoration-brass/60" : ""
+                        }`}
+                      >
+                        {dish.name}
+                      </h3>
                     </div>
-                    <span className="shrink-0 text-sm text-muted-foreground">
+                    <span className="shrink-0 font-mono text-sm tabular-nums text-muted-foreground">
                       {formatINR(dish.price)}
                     </span>
                   </div>

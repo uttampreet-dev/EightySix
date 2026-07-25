@@ -44,8 +44,10 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Toaster } from "@/components/ui/sonner";
+import { AnimatePresence, motion } from "motion/react";
 import { Sparkline } from "@/components/sparkline";
 import { SignOutButton } from "@/components/sign-out-button";
+import { NumberTicker } from "@/components/number-ticker";
 
 const NEXT_STATUS: Partial<Record<OrderStatus, { to: OrderStatus; label: string }>> = {
   placed: { to: "cooking", label: "Start cooking" },
@@ -53,17 +55,27 @@ const NEXT_STATUS: Partial<Record<OrderStatus, { to: OrderStatus; label: string 
   served: { to: "paid", label: "Mark paid" },
 };
 
-function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
+function StatCard({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: React.ReactNode;
+  hint?: string;
+}) {
   return (
     <Card className="gap-2 py-4">
       <CardHeader className="px-4">
-        <CardTitle className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+        <CardTitle className="font-mono text-[10px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
           {label}
         </CardTitle>
       </CardHeader>
       <CardContent className="px-4">
-        <p className="text-2xl font-semibold tabular-nums">{value}</p>
-        {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
+        <p className="font-serif text-[26px] font-medium leading-none tabular-nums">
+          {value}
+        </p>
+        {hint && <p className="mt-1.5 text-xs text-muted-foreground">{hint}</p>}
       </CardContent>
     </Card>
   );
@@ -341,7 +353,9 @@ export function DashboardClient({
       <header className="sticky top-0 z-10 -mx-4 border-b border-border/60 bg-background/90 px-4 py-4 backdrop-blur">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold tracking-tight">{restaurant.name}</h1>
+            <h1 className="font-serif text-2xl font-medium tracking-tight">
+              {restaurant.name}
+            </h1>
             <p className="text-xs text-muted-foreground">
               Owner dashboard · {userEmail}
             </p>
@@ -369,25 +383,32 @@ export function DashboardClient({
       </header>
 
       <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <StatCard label="Revenue today" value={formatINR(stats.revenue)} />
+        <StatCard
+          label="Revenue today"
+          value={<NumberTicker value={stats.revenue} format={formatINR} />}
+        />
         <StatCard
           label="Orders today"
-          value={String(stats.orderCount)}
+          value={<NumberTicker value={stats.orderCount} />}
           hint={`${orders.filter((o) => o.status === "placed" || o.status === "cooking").length} in progress`}
         />
         <StatCard
           label="Top dish"
-          value={stats.topDishes[0]?.name ?? "—"}
+          value={
+            <span className="text-xl leading-tight">
+              {stats.topDishes[0]?.name ?? "—"}
+            </span>
+          }
           hint={stats.topDishes[0] ? `${stats.topDishes[0].qty} portions` : "No orders yet"}
         />
         <StatCard
           label="Low / out stock"
-          value={String(lowCount)}
+          value={<NumberTicker value={lowCount} />}
           hint={`of ${ingredients.length} ingredients`}
         />
         <Card className="gap-2 py-4">
           <CardHeader className="px-4">
-            <CardTitle className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+            <CardTitle className="font-mono text-[10px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
               Orders per hour
             </CardTitle>
           </CardHeader>
@@ -405,7 +426,7 @@ export function DashboardClient({
       <div className="mt-8 grid gap-4 lg:grid-cols-[1fr_380px]">
         <section>
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-medium uppercase tracking-widest text-muted-foreground">
+            <h2 className="font-mono text-[11px] uppercase tracking-[0.25em] text-muted-foreground">
               86-risk radar
             </h2>
             <Button asChild size="sm" variant="outline">
@@ -429,13 +450,19 @@ export function DashboardClient({
             </p>
           ) : (
             <div className="space-y-1.5">
+              <AnimatePresence initial={false}>
               {dying.map((dish) => {
                 const mins = dish.minutes_to_86!;
                 const level =
                   mins <= RISK_ALERT_MINUTES ? "critical" : mins <= 90 ? "warm" : "calm";
                 return (
-                  <div
+                  <motion.div
                     key={dish.id}
+                    layout
+                    initial={{ opacity: 0, x: -12 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: 12 }}
+                    transition={{ type: "spring", stiffness: 380, damping: 32 }}
                     className={`flex items-center justify-between gap-3 rounded-md border px-3 py-2 ${
                       level === "critical"
                         ? "border-red-900/60 bg-red-950/30"
@@ -458,9 +485,10 @@ export function DashboardClient({
                     >
                       86 in {formatEta(mins)}
                     </Badge>
-                  </div>
+                  </motion.div>
                 );
               })}
+              </AnimatePresence>
               {dead.map((dish) => (
                 <div
                   key={dish.id}
@@ -477,7 +505,7 @@ export function DashboardClient({
         </section>
 
         <section>
-          <h2 className="mb-3 text-sm font-medium uppercase tracking-widest text-muted-foreground">
+          <h2 className="mb-3 font-mono text-[11px] uppercase tracking-[0.25em] text-muted-foreground">
             Manager brief
           </h2>
           <Card className="gap-3 py-4">
