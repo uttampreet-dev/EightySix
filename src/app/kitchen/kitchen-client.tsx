@@ -14,6 +14,7 @@ import { adjustStock, bumpOrderStatus } from "@/app/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
+import { SignOutButton } from "@/components/sign-out-button";
 
 function orderAge(createdAt: string, now: number): string {
   const mins = Math.max(0, Math.floor((now - new Date(createdAt).getTime()) / 60000));
@@ -134,9 +135,12 @@ export function KitchenClient({
             <h1 className="text-xl font-semibold tracking-tight">Kitchen</h1>
             <p className="text-xs text-muted-foreground">{restaurant.name}</p>
           </div>
-          <Badge variant="outline">
-            {orders.length} open order{orders.length === 1 ? "" : "s"}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline">
+              {orders.length} open order{orders.length === 1 ? "" : "s"}
+            </Badge>
+            <SignOutButton />
+          </div>
         </div>
       </header>
 

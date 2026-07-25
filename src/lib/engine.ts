@@ -141,3 +141,75 @@ export async function getOpenOrders(
 export function formatINR(n: number): string {
   return `₹${Math.round(n).toLocaleString("en-IN")}`;
 }
+
+export type TodayOrder = {
+  id: string;
+  status: OrderStatus;
+  created_at: string;
+  table_id: string | null;
+  order_items: {
+    id: string;
+    qty: number;
+    dishes: { name: string; price: number } | null;
+  }[];
+  tables: { label: string } | null;
+};
+
+export async function getTodayOrders(
+  supabase: SupabaseClient,
+  restaurantId: string
+): Promise<TodayOrder[]> {
+  const midnight = new Date();
+  midnight.setHours(0, 0, 0, 0);
+  const { data, error } = await supabase
+    .from("orders")
+    .select(
+      "id, status, created_at, table_id, order_items(id, qty, dishes(name, price)), tables(label)"
+    )
+    .eq("restaurant_id", restaurantId)
+    .gte("created_at", midnight.toISOString())
+    .order("created_at", { ascending: false })
+    .returns<TodayOrder[]>();
+  if (error) throw error;
+  return data ?? [];
+}
+
+export function orderTotal(order: TodayOrder): number {
+  return order.order_items.reduce(
+    (sum, item) => sum + item.qty * (item.dishes?.price ?? 0),
+    0
+  );
+}
+
+export type DayStats = {
+  revenue: number;
+  orderCount: number;
+  topDishes: { name: string; qty: number }[];
+  perHour: { hour: number; count: number }[];
+};
+
+export function computeDayStats(orders: TodayOrder[]): DayStats {
+  const revenue = orders.reduce((sum, o) => sum + orderTotal(o), 0);
+
+  const dishQty = new Map<string, number>();
+  for (const order of orders) {
+    for (const item of order.order_items) {
+      if (!item.dishes) continue;
+      dishQty.set(item.dishes.name, (dishQty.get(item.dishes.name) ?? 0) + item.qty);
+    }
+  }
+  const topDishes = [...dishQty.entries()]
+    .map(([name, qty]) => ({ name, qty }))
+    .sort((a, b) => b.qty - a.qty)
+    .slice(0, 5);
+
+  const currentHour = new Date().getHours();
+  const counts = new Array<number>(currentHour + 1).fill(0);
+  for (const order of orders) {
+    const h = new Date(order.created_at).getHours();
+    if (h >= 0 && h <= currentHour) counts[h]++;
+  }
+  const perHour = counts.map((count, hour) => ({ hour, count }));
+
+  return { revenue, orderCount: orders.length, topDishes, perHour };
+}

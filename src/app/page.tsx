@@ -31,6 +31,9 @@ export default function Home() {
         <Button asChild size="lg" variant="outline">
           <Link href="/kitchen">Kitchen view</Link>
         </Button>
+        <Button asChild size="lg" variant="outline">
+          <Link href="/dashboard">Owner dashboard</Link>
+        </Button>
       </div>
     </main>
   );

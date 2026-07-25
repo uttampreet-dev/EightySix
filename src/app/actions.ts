@@ -109,3 +109,56 @@ export async function adjustStock(
   if (error) return { ok: false, error: error.message };
   return { ok: true };
 }
+
+export async function updateIngredient(
+  ingredientId: string,
+  updates: { stockQty?: number; reorderLevel?: number }
+): Promise<ActionResult> {
+  const supabase = createAdminClient();
+
+  if (updates.stockQty !== undefined) {
+    if (updates.stockQty < 0) return { ok: false, error: "Stock can't be negative." };
+    const { data: ingredient, error } = await supabase
+      .from("ingredients")
+      .select("stock_qty")
+      .eq("id", ingredientId)
+      .single();
+    if (error) return { ok: false, error: error.message };
+
+    const delta = updates.stockQty - Number(ingredient.stock_qty);
+    if (delta !== 0) {
+      const { error: eventError } = await supabase
+        .from("stock_events")
+        .insert({ ingredient_id: ingredientId, delta, reason: "manual" });
+      if (eventError) return { ok: false, error: eventError.message };
+    }
+  }
+
+  if (updates.reorderLevel !== undefined) {
+    if (updates.reorderLevel < 0) return { ok: false, error: "Reorder level can't be negative." };
+    const { error } = await supabase
+      .from("ingredients")
+      .update({ reorder_level: updates.reorderLevel })
+      .eq("id", ingredientId);
+    if (error) return { ok: false, error: error.message };
+  }
+
+  return { ok: true };
+}
+
+export async function toggleTableStatus(tableId: string): Promise<ActionResult> {
+  const supabase = createAdminClient();
+  const { data: table, error: fetchError } = await supabase
+    .from("tables")
+    .select("status")
+    .eq("id", tableId)
+    .single();
+  if (fetchError) return { ok: false, error: fetchError.message };
+
+  const { error } = await supabase
+    .from("tables")
+    .update({ status: table.status === "free" ? "occupied" : "free" })
+    .eq("id", tableId);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
