@@ -11,12 +11,15 @@ import {
   formatINR,
   getDishRisk,
   getIngredients,
+  getRecentEvents,
   getTables,
   getTodayOrders,
   orderTotal,
+  restaurantHealth,
   RISK_ALERT_MINUTES,
   type DishRisk,
   type Ingredient,
+  type LedgerEvent,
   type OrderStatus,
   type Restaurant,
   type RestaurantTable,
@@ -170,6 +173,7 @@ export function DashboardClient({
   initialIngredients,
   initialTables,
   initialRisk,
+  initialEvents,
   userEmail,
 }: {
   restaurant: Restaurant;
@@ -177,12 +181,14 @@ export function DashboardClient({
   initialIngredients: Ingredient[];
   initialTables: RestaurantTable[];
   initialRisk: DishRisk[];
+  initialEvents: LedgerEvent[];
   userEmail: string;
 }) {
   const [orders, setOrders] = useState(initialOrders);
   const [ingredients, setIngredients] = useState(initialIngredients);
   const [tables, setTables] = useState(initialTables);
   const [risk, setRisk] = useState(initialRisk);
+  const [events, setEvents] = useState<LedgerEvent[]>(initialEvents);
   const [brief, setBrief] = useState<string | null>(null);
   const [briefLoading, setBriefLoading] = useState(false);
   const [rushActive, setRushActive] = useState(false);
@@ -244,6 +250,10 @@ export function DashboardClient({
   const refetchTables = useCallback(async () => {
     setTables(await getTables(createClient(), restaurant.id));
   }, [restaurant.id]);
+  const refetchEvents = useCallback(async () => {
+    setEvents(await getRecentEvents(createClient(), restaurant.id));
+  }, [restaurant.id]);
+
   const refetchRisk = useCallback(async () => {
     const fresh = await getDishRisk(createClient(), restaurant.id);
     // Alert once per dish when its predicted death crosses the threshold.
@@ -295,6 +305,7 @@ export function DashboardClient({
         () => {
           debounced("ingredients", refetchIngredients);
           debounced("risk", refetchRisk);
+          debounced("events", refetchEvents);
         }
       )
       .on(
@@ -313,7 +324,7 @@ export function DashboardClient({
       timers.forEach(clearTimeout);
       supabase.removeChannel(channel);
     };
-  }, [restaurant.id, refetchOrders, refetchIngredients, refetchTables, refetchRisk]);
+  }, [restaurant.id, refetchOrders, refetchIngredients, refetchTables, refetchRisk, refetchEvents]);
 
   const stats = useMemo(() => computeDayStats(orders), [orders]);
   const lowCount = ingredients.filter(
@@ -345,6 +356,7 @@ export function DashboardClient({
   const dying = atRiskDishes(risk);
   const dead = risk.filter((d) => d.portions_left <= 0);
   const critical = dying.filter((d) => d.minutes_to_86! <= RISK_ALERT_MINUTES);
+  const health = restaurantHealth(risk);
 
   return (
     <div className="mx-auto w-full max-w-6xl flex-1 px-4 pb-16">
@@ -382,7 +394,54 @@ export function DashboardClient({
         </div>
       </header>
 
-      <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      {/* live status — computed from the radar, never generated */}
+      <motion.div
+        layout
+        className={`mt-6 flex items-center gap-4 rounded-xl border px-5 py-4 transition-colors duration-700 ${
+          health.level === "critical"
+            ? "border-red-900/60 bg-red-950/25"
+            : health.level === "watch"
+              ? "border-amber-800/50 bg-amber-950/15"
+              : "border-green-900/50 bg-green-950/15"
+        }`}
+      >
+        <span className="relative flex h-3 w-3 shrink-0">
+          <span
+            className={`absolute h-full w-full animate-ping rounded-full opacity-50 ${
+              health.level === "critical"
+                ? "bg-red-500"
+                : health.level === "watch"
+                  ? "bg-amber-400"
+                  : "bg-green-500"
+            }`}
+          />
+          <span
+            className={`relative h-3 w-3 rounded-full ${
+              health.level === "critical"
+                ? "bg-red-500"
+                : health.level === "watch"
+                  ? "bg-amber-400"
+                  : "bg-green-500"
+            }`}
+          />
+        </span>
+        <div className="min-w-0">
+          <p
+            className={`font-mono text-[10px] uppercase tracking-[0.22em] ${
+              health.level === "critical"
+                ? "text-red-400"
+                : health.level === "watch"
+                  ? "text-amber-400"
+                  : "text-green-500"
+            }`}
+          >
+            {health.label}
+          </p>
+          <p className="mt-0.5 font-serif text-lg leading-snug">{health.headline}</p>
+        </div>
+      </motion.div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <StatCard
           label="Revenue today"
           value={<NumberTicker value={stats.revenue} format={formatINR} />}
@@ -444,10 +503,18 @@ export function DashboardClient({
           )}
 
           {dying.length === 0 && dead.length === 0 ? (
-            <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-              No dishes at risk. Predictions appear as soon as orders build up
-              velocity.
-            </p>
+            <div className="rounded-lg border border-dashed p-6 text-center">
+              <p className="text-sm text-muted-foreground">
+                No dishes at risk right now.
+              </p>
+              <p className="mt-1.5 text-sm text-muted-foreground">
+                Press{" "}
+                <span className="font-medium text-foreground">
+                  Simulate dinner rush
+                </span>{" "}
+                ↑ and watch predictions light up as order velocity builds.
+              </p>
+            </div>
           ) : (
             <div className="space-y-1.5">
               <AnimatePresence initial={false}>
@@ -536,6 +603,64 @@ export function DashboardClient({
               </Button>
             </CardContent>
           </Card>
+
+          <h2 className="mb-3 mt-8 font-mono text-[11px] uppercase tracking-[0.25em] text-muted-foreground">
+            Live ledger
+          </h2>
+          {events.length === 0 ? (
+            <p className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground">
+              Every stock movement lands here — orders depleting ingredients,
+              kitchen markdowns, restocks. Nothing is faked.
+            </p>
+          ) : (
+            <div className="space-y-1 overflow-hidden">
+              <AnimatePresence initial={false}>
+                {events.slice(0, 10).map((event) => {
+                  const delta = Number(event.delta);
+                  return (
+                    <motion.div
+                      key={event.id}
+                      layout
+                      initial={{ opacity: 0, y: -8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.35 }}
+                      className="flex items-center gap-2.5 rounded-md border border-border/60 bg-white/1.5 px-3 py-1.5 font-mono text-[11px]"
+                    >
+                      <span
+                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                          event.reason === "prep" || delta > 0
+                            ? "bg-brass"
+                            : event.reason === "manual"
+                              ? "bg-amber-400"
+                              : "bg-muted-foreground/50"
+                        }`}
+                      />
+                      <span className="text-muted-foreground">
+                        {new Date(event.created_at).toLocaleTimeString("en-IN", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </span>
+                      <span className="truncate">
+                        {event.ingredients?.name ?? "—"}{" "}
+                        <span
+                          className={
+                            delta > 0 ? "text-brass" : "text-muted-foreground"
+                          }
+                        >
+                          {delta > 0 ? "+" : ""}
+                          {delta.toFixed(2)} {event.ingredients?.unit}
+                        </span>
+                      </span>
+                      <span className="ml-auto shrink-0 text-muted-foreground/60">
+                        {event.reason}
+                      </span>
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
+            </div>
+          )}
         </section>
       </div>
 
@@ -548,9 +673,16 @@ export function DashboardClient({
 
         <TabsContent value="orders" className="mt-4">
           {orders.length === 0 ? (
-            <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-              No orders yet today.
-            </p>
+            <div className="rounded-lg border border-dashed p-8 text-center">
+              <p className="text-sm text-muted-foreground">No orders yet today.</p>
+              <p className="mt-1.5 text-sm text-muted-foreground">
+                Press{" "}
+                <span className="font-medium text-foreground">
+                  Simulate dinner rush
+                </span>{" "}
+                ↑ — orders, stock, the menu and the radar all move at once.
+              </p>
+            </div>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {orders.map((order) => {

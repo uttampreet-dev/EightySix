@@ -197,6 +197,75 @@ export function formatEta(minutes: number): string {
   return `~${h}h ${minutes % 60}m`;
 }
 
+export type LedgerEvent = {
+  id: string;
+  delta: number;
+  reason: "order" | "manual" | "prep";
+  created_at: string;
+  ingredients: { name: string; unit: string } | null;
+};
+
+export async function getRecentEvents(
+  supabase: SupabaseClient,
+  restaurantId: string,
+  limit = 14
+): Promise<LedgerEvent[]> {
+  const { data, error } = await supabase
+    .from("stock_events")
+    .select("id, delta, reason, created_at, ingredients(name, unit)")
+    .eq("restaurant_id", restaurantId)
+    .order("created_at", { ascending: false })
+    .limit(limit)
+    .returns<LedgerEvent[]>();
+  if (error) throw error;
+  return data ?? [];
+}
+
+export type HealthLevel = "healthy" | "watch" | "critical";
+
+export type RestaurantHealth = {
+  level: HealthLevel;
+  label: string;
+  headline: string;
+};
+
+// Deterministic status — computed from the live radar, never generated.
+export function restaurantHealth(risk: DishRisk[]): RestaurantHealth {
+  const dying = atRiskDishes(risk);
+  const dead = risk.filter((d) => d.is_active && d.portions_left <= 0);
+  const critical = dying.filter((d) => d.minutes_to_86! <= RISK_ALERT_MINUTES);
+
+  if (critical.length > 0) {
+    const d = critical[0];
+    return {
+      level: "critical",
+      label: "Critical",
+      headline: `${d.name} dies in ${formatEta(d.minutes_to_86!)} at this pace — ${d.portions_left} left. Prep more now or push an alternative.`,
+    };
+  }
+  if (dying.length > 0) {
+    const d = dying[0];
+    return {
+      level: "watch",
+      label: "Rush building",
+      headline: `${d.name} is moving fastest — 86 predicted in ${formatEta(d.minutes_to_86!)}.${dead.length > 0 ? ` ${dead.length} dish${dead.length > 1 ? "es" : ""} already 86'd.` : ""}`,
+    };
+  }
+  if (dead.length > 0) {
+    return {
+      level: "watch",
+      label: "Attention",
+      headline: `${dead.length} dish${dead.length > 1 ? "es are" : " is"} 86'd — restock the missing ingredients to bring ${dead.length > 1 ? "them" : "it"} back.`,
+    };
+  }
+  const available = risk.filter((d) => d.is_active && d.portions_left > 0).length;
+  return {
+    level: "healthy",
+    label: "All clear",
+    headline: `All ${available} dishes available. The engine is watching live order velocity.`,
+  };
+}
+
 export type TodayOrder = {
   id: string;
   status: OrderStatus;

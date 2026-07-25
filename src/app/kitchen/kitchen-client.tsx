@@ -151,10 +151,16 @@ export function KitchenClient({
             Order queue
           </h2>
           {orders.length === 0 ? (
-            <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-              No open orders. They&apos;ll appear here the moment a diner
-              places one.
-            </p>
+            <div className="rounded-lg border border-dashed p-8 text-center">
+              <p className="text-sm text-muted-foreground">
+                No open orders — they land here the second a diner places one.
+              </p>
+              <p className="mt-1.5 text-sm text-muted-foreground">
+                Order from the{" "}
+                <span className="font-medium text-foreground">live menu</span>,
+                or run the dinner rush from the owner dashboard.
+              </p>
+            </div>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2">
               <AnimatePresence initial={false}>
@@ -228,7 +234,11 @@ export function KitchenClient({
                     <p className="truncate text-sm font-medium">
                       {ingredient.name}
                     </p>
-                    <p
+                    <motion.p
+                      key={Number(ingredient.stock_qty)}
+                      initial={{ opacity: 0.3 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ duration: 0.5 }}
                       className={`text-xs tabular-nums ${
                         tone === "out"
                           ? "text-red-400"
@@ -240,7 +250,7 @@ export function KitchenClient({
                       {Number(ingredient.stock_qty).toFixed(1)} {ingredient.unit}
                       {tone === "out" && " · OUT"}
                       {tone === "low" && " · LOW"}
-                    </p>
+                    </motion.p>
                   </div>
                   <div className="flex shrink-0 gap-1">
                     <Button

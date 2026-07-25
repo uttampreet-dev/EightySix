@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { motion } from "motion/react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -74,6 +75,7 @@ export function MenuClient({
   const [swapLoading, setSwapLoading] = useState(false);
   const [swaps, setSwaps] = useState<SwapSuggestion[]>([]);
   const [swapError, setSwapError] = useState<string | null>(null);
+  const [swapOutOf, setSwapOutOf] = useState<string | null>(null);
   const dishesRef = useRef(dishes);
   useEffect(() => {
     dishesRef.current = dishes;
@@ -173,8 +175,10 @@ export function MenuClient({
     setSwapLoading(true);
     const result = await suggestSwap(dish.id);
     setSwapLoading(false);
-    if (result.ok && result.data) setSwaps(result.data.suggestions);
-    else if (!result.ok) setSwapError(result.error);
+    if (result.ok && result.data) {
+      setSwaps(result.data.suggestions);
+      setSwapOutOf(result.data.outOf);
+    } else if (!result.ok) setSwapError(result.error);
   }
 
   async function submitOrder() {
@@ -260,7 +264,12 @@ export function MenuClient({
                   </div>
 
                   <div className="mt-3 flex items-center justify-between">
-                    <div>
+                    <motion.div
+                      key={dish.portions_left}
+                      initial={{ opacity: 0.35, scale: 1.05 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+                    >
                       {out ? (
                         <Badge variant="destructive" className="font-mono">
                           86&apos;d — sold out
@@ -274,7 +283,7 @@ export function MenuClient({
                           {dish.portions_left} portions
                         </span>
                       )}
-                    </div>
+                    </motion.div>
 
                     {out && (
                       <Button
@@ -333,7 +342,9 @@ export function MenuClient({
             <DialogDescription>
               {swapLoading
                 ? "Finding the closest match still in the kitchen…"
-                : "Closest available alternatives, picked from live stock:"}
+                : swapOutOf
+                  ? `The kitchen ran out of ${swapOutOf.toLowerCase()}. Closest available alternatives, from live stock:`
+                  : "Closest available alternatives, picked from live stock:"}
             </DialogDescription>
           </DialogHeader>
           {swapError && <p className="text-sm text-destructive">{swapError}</p>}

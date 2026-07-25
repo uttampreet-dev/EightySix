@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import {
   getDishRisk,
   getIngredients,
+  getRecentEvents,
   getRestaurantBySlug,
   getTables,
   getTodayOrders,
@@ -40,11 +41,12 @@ export default async function DashboardPage() {
   if (!restaurant) restaurant = await getRestaurantBySlug(supabase, "demo");
   if (!restaurant) notFound();
 
-  const [orders, ingredients, tables, risk] = await Promise.all([
+  const [orders, ingredients, tables, risk, events] = await Promise.all([
     getTodayOrders(supabase, restaurant.id),
     getIngredients(supabase, restaurant.id),
     getTables(supabase, restaurant.id),
     getDishRisk(supabase, restaurant.id),
+    getRecentEvents(supabase, restaurant.id),
   ]);
 
   return (
@@ -54,6 +56,7 @@ export default async function DashboardPage() {
       initialIngredients={ingredients}
       initialTables={tables}
       initialRisk={risk}
+      initialEvents={events}
       userEmail={user.email ?? ""}
     />
   );

@@ -165,7 +165,7 @@ export type SwapSuggestion = {
 
 export async function suggestSwap(
   dishId: string
-): Promise<ActionResult<{ suggestions: SwapSuggestion[] }>> {
+): Promise<ActionResult<{ suggestions: SwapSuggestion[]; outOf: string | null }>> {
   const supabase = createAdminClient();
 
   const { data: dead, error } = await supabase
@@ -174,6 +174,21 @@ export async function suggestSwap(
     .eq("id", dishId)
     .single();
   if (error) return { ok: false, error: error.message };
+
+  // Which ingredient actually killed it — real cause, from the recipe graph.
+  const { data: recipe } = await supabase
+    .from("recipe_items")
+    .select("qty_per_portion, ingredients(name, stock_qty)")
+    .eq("dish_id", dishId)
+    .returns<{ qty_per_portion: number; ingredients: { name: string; stock_qty: number } | null }[]>();
+  const limiting = (recipe ?? [])
+    .filter((r) => r.ingredients)
+    .map((r) => ({
+      name: r.ingredients!.name,
+      ratio: Number(r.ingredients!.stock_qty) / Number(r.qty_per_portion),
+    }))
+    .sort((a, b) => a.ratio - b.ratio)[0];
+  const outOf = limiting && limiting.ratio < 1 ? limiting.name : null;
 
   const availability = await getAvailability(supabase, dead.restaurant_id);
   const candidates = availability.filter(
@@ -218,7 +233,7 @@ Return JSON: {"suggestions":[{"id":"<id from list>","reason":"<one short appetis
 
   if (suggestions.length === 0)
     return { ok: false, error: "No good substitute available right now." };
-  return { ok: true, data: { suggestions } };
+  return { ok: true, data: { suggestions, outOf } };
 }
 
 export async function getMorningBrief(
