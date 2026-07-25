@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 export default function Home() {
   return (
@@ -22,9 +24,14 @@ export default function Home() {
         kitchen slang for a dish that just ran out and got struck off the menu.
       </p>
 
-      <p className="text-xs text-muted-foreground/60">
-        Demo restaurant opening soon.
-      </p>
+      <div className="flex flex-wrap items-center justify-center gap-3">
+        <Button asChild size="lg">
+          <Link href="/r/demo">Enter demo restaurant</Link>
+        </Button>
+        <Button asChild size="lg" variant="outline">
+          <Link href="/kitchen">Kitchen view</Link>
+        </Button>
+      </div>
     </main>
   );
 }
