@@ -7,10 +7,13 @@ export const dynamic = "force-dynamic";
 
 export default async function RestaurantMenuPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ table?: string }>;
 }) {
   const { slug } = await params;
+  const { table: tableParam } = await searchParams;
   const supabase = await createClient();
 
   const restaurant = await getRestaurantBySlug(supabase, slug);
@@ -21,5 +24,12 @@ export default async function RestaurantMenuPage({
     getTables(supabase, restaurant.id),
   ]);
 
-  return <MenuClient restaurant={restaurant} initialDishes={dishes} tables={tables} />;
+  return (
+    <MenuClient
+      restaurant={restaurant}
+      initialDishes={dishes}
+      tables={tables}
+      initialTableLabel={tableParam ?? null}
+    />
+  );
 }

@@ -30,6 +30,7 @@ import {
   getMorningBrief,
   resetDemo,
   rushTick,
+  setDishActive,
   toggleTableStatus,
   updateIngredient,
 } from "@/app/actions";
@@ -488,9 +489,14 @@ export function DashboardClient({
             <h2 className="font-mono text-[11px] uppercase tracking-[0.25em] text-muted-foreground">
               86-risk radar
             </h2>
-            <Button asChild size="sm" variant="outline">
-              <Link href="/dashboard/prep">Tomorrow&apos;s prep sheet</Link>
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button asChild size="sm" variant="outline">
+                <Link href="/dashboard/qr">Table QRs</Link>
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <Link href="/dashboard/prep">Tomorrow&apos;s prep sheet</Link>
+              </Button>
+            </div>
           </div>
 
           {critical.length > 0 && (
@@ -668,6 +674,7 @@ export function DashboardClient({
         <TabsList>
           <TabsTrigger value="orders">Orders</TabsTrigger>
           <TabsTrigger value="inventory">Inventory</TabsTrigger>
+          <TabsTrigger value="menu">Menu</TabsTrigger>
           <TabsTrigger value="tables">Tables</TabsTrigger>
         </TabsList>
 
@@ -766,6 +773,81 @@ export function DashboardClient({
               </TableBody>
             </Table>
           </div>
+        </TabsContent>
+
+        <TabsContent value="menu" className="mt-4">
+          <div className="rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Dish</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Price</TableHead>
+                  <TableHead>Portions</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {[...risk]
+                  .sort(
+                    (a, b) =>
+                      a.category.localeCompare(b.category) ||
+                      a.name.localeCompare(b.name)
+                  )
+                  .map((dish) => {
+                    const out = dish.portions_left <= 0;
+                    return (
+                      <TableRow key={dish.id} className={!dish.is_active ? "opacity-60" : ""}>
+                        <TableCell className="font-medium">
+                          <span className={!dish.is_active ? "line-through decoration-brass/60" : ""}>
+                            {dish.name}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">{dish.category}</TableCell>
+                        <TableCell className="tabular-nums text-muted-foreground">
+                          {formatINR(dish.price)}
+                        </TableCell>
+                        <TableCell className="tabular-nums">{dish.portions_left}</TableCell>
+                        <TableCell>
+                          {!dish.is_active ? (
+                            <Badge variant="destructive" className="font-mono">86&apos;d manually</Badge>
+                          ) : out ? (
+                            <Badge variant="destructive" className="font-mono">86&apos;d — no stock</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-muted-foreground">On menu</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            size="sm"
+                            variant={dish.is_active ? "outline" : "secondary"}
+                            className={dish.is_active ? "text-red-400" : ""}
+                            onClick={async () => {
+                              const result = await setDishActive(dish.id, !dish.is_active);
+                              if (!result.ok) toast.error(result.error);
+                              else
+                                toast.success(
+                                  dish.is_active
+                                    ? `${dish.name} struck off the menu`
+                                    : `${dish.name} is back on the menu`
+                                );
+                              refetchRisk();
+                            }}
+                          >
+                            {dish.is_active ? "86 it" : "Bring back"}
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+              </TableBody>
+            </Table>
+          </div>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Manual 86 overrides stock — the dish greys out on every diner menu
+            instantly, whatever the inventory says.
+          </p>
         </TabsContent>
 
         <TabsContent value="tables" className="mt-4">

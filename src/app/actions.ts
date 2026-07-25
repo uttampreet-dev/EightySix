@@ -354,6 +354,19 @@ export async function rushTick(
   return { ok: true, data: { placed: items.map((i) => `${i.name} ×${i.qty}`) } };
 }
 
+export async function setDishActive(
+  dishId: string,
+  active: boolean
+): Promise<ActionResult> {
+  const supabase = createAdminClient();
+  const { error } = await supabase
+    .from("dishes")
+    .update({ is_active: active })
+    .eq("id", dishId);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
 export async function resetDemo(): Promise<ActionResult> {
   const supabase = createAdminClient();
   const { error } = await supabase.rpc("reset_demo");

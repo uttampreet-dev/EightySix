@@ -9,7 +9,9 @@ import {
   categoryRank,
   formatINR,
   getAvailability,
+  getOrdersByIds,
   type DishAvailability,
+  type OrderWithItems,
   type Restaurant,
   type RestaurantTable,
 } from "@/lib/engine";
@@ -57,18 +59,35 @@ function VegMark({ veg }: { veg: boolean }) {
   );
 }
 
+const STATUS_COPY: Record<string, string> = {
+  placed: "sent to the kitchen",
+  cooking: "being cooked",
+  served: "served — enjoy!",
+};
+
 export function MenuClient({
   restaurant,
   initialDishes,
   tables,
+  initialTableLabel,
 }: {
   restaurant: Restaurant;
   initialDishes: DishAvailability[];
   tables: RestaurantTable[];
+  initialTableLabel: string | null;
 }) {
   const [dishes, setDishes] = useState(initialDishes);
   const [cart, setCart] = useState<Record<string, number>>({});
-  const [tableId, setTableId] = useState<string | null>(null);
+  const [tableId, setTableId] = useState<string | null>(
+    () =>
+      tables.find(
+        (t) => t.label.toLowerCase() === initialTableLabel?.toLowerCase()
+      )?.id ?? null
+  );
+  const [myOrders, setMyOrders] = useState<OrderWithItems[]>([]);
+  const myOrderIdsRef = useRef<string[]>([]);
+  const orderStatusRef = useRef<Map<string, string>>(new Map());
+  const storageKey = `eightysix-orders-${restaurant.id}`;
   const [placing, setPlacing] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [swapFor, setSwapFor] = useState<DishAvailability | null>(null);
@@ -105,6 +124,45 @@ export function MenuClient({
     setDishes(fresh);
   }, [restaurant.id]);
 
+  // My orders: ids live in localStorage so the strip survives reloads.
+  const refetchMyOrders = useCallback(async () => {
+    const ids = myOrderIdsRef.current;
+    if (ids.length === 0) {
+      setMyOrders([]);
+      return;
+    }
+    const supabase = createClient();
+    const orders = await getOrdersByIds(supabase, ids);
+
+    for (const order of orders) {
+      const prev = orderStatusRef.current.get(order.id);
+      if (prev && prev !== order.status && STATUS_COPY[order.status]) {
+        toast.success(
+          `Your order${order.tables ? ` for table ${order.tables.label}` : ""} is ${STATUS_COPY[order.status]}`
+        );
+      }
+      orderStatusRef.current.set(order.id, order.status);
+    }
+
+    // paid orders leave the strip and the storage
+    const active = orders.filter((o) => o.status !== "paid");
+    const activeIds = active.map((o) => o.id);
+    if (activeIds.length !== ids.length) {
+      myOrderIdsRef.current = activeIds;
+      localStorage.setItem(storageKey, JSON.stringify(activeIds));
+    }
+    setMyOrders(active);
+  }, [storageKey]);
+
+  useEffect(() => {
+    try {
+      myOrderIdsRef.current = JSON.parse(localStorage.getItem(storageKey) ?? "[]");
+    } catch {
+      myOrderIdsRef.current = [];
+    }
+    refetchMyOrders();
+  }, [storageKey, refetchMyOrders]);
+
   useEffect(() => {
     const supabase = createClient();
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -115,6 +173,16 @@ export function MenuClient({
 
     const channel = supabase
       .channel(`menu-${restaurant.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "orders",
+          filter: `restaurant_id=eq.${restaurant.id}`,
+        },
+        () => refetchMyOrders()
+      )
       .on(
         "postgres_changes",
         {
@@ -141,7 +209,7 @@ export function MenuClient({
       if (timer) clearTimeout(timer);
       supabase.removeChannel(channel);
     };
-  }, [restaurant.id, refetch]);
+  }, [restaurant.id, refetch, refetchMyOrders]);
 
   const categories = useMemo(() => {
     const byCategory = new Map<string, DishAvailability[]>();
@@ -191,8 +259,14 @@ export function MenuClient({
     setPlacing(false);
     if (result.ok) {
       toast.success("Order placed", {
-        description: "The kitchen has it — sit tight.",
+        description: "The kitchen has it — track it at the top of the menu.",
       });
+      if (result.data) {
+        myOrderIdsRef.current = [result.data.orderId, ...myOrderIdsRef.current];
+        localStorage.setItem(storageKey, JSON.stringify(myOrderIdsRef.current));
+        orderStatusRef.current.set(result.data.orderId, "placed");
+        refetchMyOrders();
+      }
       setCart({});
       setSheetOpen(false);
     } else {
@@ -224,6 +298,53 @@ export function MenuClient({
           </div>
         </div>
       </header>
+
+      {myOrders.length > 0 && (
+        <section className="mt-4 space-y-1.5">
+          {myOrders.map((order) => (
+            <motion.div
+              key={`${order.id}-${order.status}`}
+              initial={{ opacity: 0.4, scale: 0.99 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.4 }}
+              className={`flex items-center gap-3 rounded-lg border px-3.5 py-2.5 ${
+                order.status === "served"
+                  ? "border-green-900/50 bg-green-950/15"
+                  : "border-brass/25 bg-brass/5"
+              }`}
+            >
+              <span className="relative flex h-2 w-2 shrink-0">
+                {order.status !== "served" && (
+                  <span className="absolute h-full w-full animate-ping rounded-full bg-brass opacity-50" />
+                )}
+                <span
+                  className={`relative h-2 w-2 rounded-full ${
+                    order.status === "served" ? "bg-green-500" : "bg-brass"
+                  }`}
+                />
+              </span>
+              <p className="min-w-0 flex-1 truncate text-sm">
+                <span className="font-medium">
+                  Your order{order.tables ? ` · Table ${order.tables.label}` : ""}
+                </span>{" "}
+                <span className="text-muted-foreground">
+                  {order.order_items
+                    .map((i) => `${i.dishes?.name} ×${i.qty}`)
+                    .join(", ")}
+                </span>
+              </p>
+              <Badge
+                variant={order.status === "placed" ? "outline" : "secondary"}
+                className={`shrink-0 font-mono ${
+                  order.status === "served" ? "text-green-500" : ""
+                }`}
+              >
+                {order.status}
+              </Badge>
+            </motion.div>
+          ))}
+        </section>
+      )}
 
       {categories.map(({ name, dishes: categoryDishes }) => (
         <section key={name} className="mt-10">

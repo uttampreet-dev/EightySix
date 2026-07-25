@@ -115,10 +115,11 @@ export async function getTables(
   const { data, error } = await supabase
     .from("tables")
     .select("*")
-    .eq("restaurant_id", restaurantId)
-    .order("label");
+    .eq("restaurant_id", restaurantId);
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []).sort((a, b) =>
+    a.label.localeCompare(b.label, undefined, { numeric: true })
+  );
 }
 
 export async function getOpenOrders(
@@ -133,6 +134,23 @@ export async function getOpenOrders(
     .eq("restaurant_id", restaurantId)
     .in("status", ["placed", "cooking"])
     .order("created_at", { ascending: true })
+    .returns<OrderWithItems[]>();
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function getOrdersByIds(
+  supabase: SupabaseClient,
+  ids: string[]
+): Promise<OrderWithItems[]> {
+  if (ids.length === 0) return [];
+  const { data, error } = await supabase
+    .from("orders")
+    .select(
+      "id, restaurant_id, table_id, status, created_at, order_items(id, dish_id, qty, status, dishes(name)), tables(label)"
+    )
+    .in("id", ids)
+    .order("created_at", { ascending: false })
     .returns<OrderWithItems[]>();
   if (error) throw error;
   return data ?? [];
