@@ -541,7 +541,7 @@ export function LandingClient() {
               className="animate-fade-up mt-5 font-mono text-[11px] tracking-wider text-muted-foreground/70"
               style={{ animationDelay: "360ms" }}
             >
-              NO SIGNUP · SEEDED RESTAURANT · RESETS ITSELF
+              INSTANT DEMO — NO ACCOUNT NEEDED · SEEDED RESTAURANT · RESETS ITSELF
             </p>
           </div>
 
