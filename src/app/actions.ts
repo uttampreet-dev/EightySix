@@ -1,7 +1,16 @@
 "use server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getAvailability, type OrderStatus } from "@/lib/engine";
+import {
+  atRiskDishes,
+  formatEta,
+  getAvailability,
+  getDishRisk,
+  getTodayOrders,
+  orderTotal,
+  type OrderStatus,
+} from "@/lib/engine";
+import { geminiJSON, geminiText } from "@/lib/gemini";
 
 type ActionResult<T = undefined> =
   | { ok: true; data?: T }
@@ -144,6 +153,110 @@ export async function updateIngredient(
   }
 
   return { ok: true };
+}
+
+export type SwapSuggestion = {
+  dishId: string;
+  name: string;
+  price: number;
+  veg: boolean;
+  reason: string;
+};
+
+export async function suggestSwap(
+  dishId: string
+): Promise<ActionResult<{ suggestions: SwapSuggestion[] }>> {
+  const supabase = createAdminClient();
+
+  const { data: dead, error } = await supabase
+    .from("dishes")
+    .select("id, restaurant_id, name, category, veg, price")
+    .eq("id", dishId)
+    .single();
+  if (error) return { ok: false, error: error.message };
+
+  const availability = await getAvailability(supabase, dead.restaurant_id);
+  const candidates = availability.filter(
+    (d) => d.id !== dead.id && d.is_active && d.portions_left > 0
+  );
+  if (candidates.length === 0)
+    return { ok: false, error: "Nothing else is available right now." };
+
+  const menu = candidates
+    .map(
+      (d) =>
+        `- ${d.name} | id=${d.id} | ${d.category} | ${d.veg ? "veg" : "non-veg"} | ₹${d.price} | ${d.portions_left} left`
+    )
+    .join("\n");
+
+  let picks: { id: string; reason: string }[];
+  try {
+    const result = await geminiJSON<{ suggestions: { id: string; reason: string }[] }>(
+      `A diner at a North Indian restaurant wants "${dead.name}" (${dead.category}, ${dead.veg ? "veg" : "non-veg"}, ₹${dead.price}) but it just sold out.
+From ONLY this list of currently available dishes, pick the 2 closest substitutes. Prefer same category and similar main ingredient, respect veg/non-veg, similar price.
+${menu}
+Return JSON: {"suggestions":[{"id":"<id from list>","reason":"<one short appetising sentence>"}]}`
+    );
+    picks = result.suggestions ?? [];
+  } catch {
+    // Gemini down → nearest same-category dishes so the intervention still works
+    picks = candidates
+      .filter((d) => d.category === dead.category && d.veg === dead.veg)
+      .slice(0, 2)
+      .map((d) => ({ id: d.id, reason: `Closest available match to ${dead.name}.` }));
+  }
+
+  // Ground the model: only accept ids that are genuinely available.
+  const byId = new Map(candidates.map((d) => [d.id, d]));
+  const suggestions = picks
+    .filter((p) => byId.has(p.id))
+    .slice(0, 2)
+    .map((p) => {
+      const d = byId.get(p.id)!;
+      return { dishId: d.id, name: d.name, price: d.price, veg: d.veg, reason: p.reason };
+    });
+
+  if (suggestions.length === 0)
+    return { ok: false, error: "No good substitute available right now." };
+  return { ok: true, data: { suggestions } };
+}
+
+export async function getMorningBrief(
+  restaurantId: string
+): Promise<ActionResult<{ brief: string }>> {
+  const supabase = createAdminClient();
+  try {
+    const [orders, risk] = await Promise.all([
+      getTodayOrders(supabase, restaurantId),
+      getDishRisk(supabase, restaurantId),
+    ]);
+    const { data: lowStock } = await supabase
+      .from("ingredients")
+      .select("name, stock_qty, reorder_level, unit")
+      .eq("restaurant_id", restaurantId);
+
+    const revenue = orders.reduce((s, o) => s + orderTotal(o), 0);
+    const dying = atRiskDishes(risk)
+      .map((d) => `${d.name}: ${d.portions_left} left, 86 in ${formatEta(d.minutes_to_86!)}`)
+      .join("; ") || "none";
+    const dead = risk.filter((d) => d.portions_left <= 0).map((d) => d.name).join(", ") || "none";
+    const low = (lowStock ?? [])
+      .filter((i) => Number(i.stock_qty) <= Number(i.reorder_level))
+      .map((i) => `${i.name} (${i.stock_qty}${i.unit})`)
+      .join(", ") || "none";
+
+    const brief = await geminiText(
+      `You are the operations brain of a North Indian restaurant. Write a crisp manager briefing (max 4 short bullet points, plain text, no markdown headers) from this live data:
+- Orders today: ${orders.length}, revenue ₹${revenue}
+- Dishes at risk of 86 (predicted from live order velocity): ${dying}
+- Already sold out: ${dead}
+- Ingredients at/below reorder level: ${low}
+Focus on actions: what to prep, what to push, what to buy. Be specific and terse.`
+    );
+    return { ok: true, data: { brief } };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Brief failed." };
+  }
 }
 
 export async function toggleTableStatus(tableId: string): Promise<ActionResult> {

@@ -142,6 +142,39 @@ export function formatINR(n: number): string {
   return `₹${Math.round(n).toLocaleString("en-IN")}`;
 }
 
+export type DishRisk = DishAvailability & {
+  velocity_30min: number;
+  minutes_to_86: number | null;
+};
+
+export const RISK_ALERT_MINUTES = 45;
+
+export async function getDishRisk(
+  supabase: SupabaseClient,
+  restaurantId: string
+): Promise<DishRisk[]> {
+  const { data, error } = await supabase
+    .from("dish_risk")
+    .select("*")
+    .eq("restaurant_id", restaurantId)
+    .order("name");
+  if (error) throw error;
+  return data ?? [];
+}
+
+// Dishes actively dying (has velocity, will run out), soonest first.
+export function atRiskDishes(risk: DishRisk[]): DishRisk[] {
+  return risk
+    .filter((d) => d.is_active && d.minutes_to_86 !== null && d.minutes_to_86 > 0)
+    .sort((a, b) => a.minutes_to_86! - b.minutes_to_86!);
+}
+
+export function formatEta(minutes: number): string {
+  if (minutes < 60) return `~${minutes} min`;
+  const h = Math.floor(minutes / 60);
+  return `~${h}h ${minutes % 60}m`;
+}
+
 export type TodayOrder = {
   id: string;
   status: OrderStatus;

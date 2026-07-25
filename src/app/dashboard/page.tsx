@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import {
+  getDishRisk,
   getIngredients,
   getRestaurantBySlug,
   getTables,
@@ -39,10 +40,11 @@ export default async function DashboardPage() {
   if (!restaurant) restaurant = await getRestaurantBySlug(supabase, "demo");
   if (!restaurant) notFound();
 
-  const [orders, ingredients, tables] = await Promise.all([
+  const [orders, ingredients, tables, risk] = await Promise.all([
     getTodayOrders(supabase, restaurant.id),
     getIngredients(supabase, restaurant.id),
     getTables(supabase, restaurant.id),
+    getDishRisk(supabase, restaurant.id),
   ]);
 
   return (
@@ -51,6 +53,7 @@ export default async function DashboardPage() {
       initialOrders={orders}
       initialIngredients={ingredients}
       initialTables={tables}
+      initialRisk={risk}
       userEmail={user.email ?? ""}
     />
   );

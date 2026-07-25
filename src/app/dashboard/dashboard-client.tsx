@@ -1,16 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import {
+  atRiskDishes,
   computeDayStats,
+  formatEta,
   formatINR,
+  getDishRisk,
   getIngredients,
   getTables,
   getTodayOrders,
   orderTotal,
+  RISK_ALERT_MINUTES,
+  type DishRisk,
   type Ingredient,
   type OrderStatus,
   type Restaurant,
@@ -19,6 +24,7 @@ import {
 } from "@/lib/engine";
 import {
   bumpOrderStatus,
+  getMorningBrief,
   toggleTableStatus,
   updateIngredient,
 } from "@/app/actions";
@@ -149,17 +155,23 @@ export function DashboardClient({
   initialOrders,
   initialIngredients,
   initialTables,
+  initialRisk,
   userEmail,
 }: {
   restaurant: Restaurant;
   initialOrders: TodayOrder[];
   initialIngredients: Ingredient[];
   initialTables: RestaurantTable[];
+  initialRisk: DishRisk[];
   userEmail: string;
 }) {
   const [orders, setOrders] = useState(initialOrders);
   const [ingredients, setIngredients] = useState(initialIngredients);
   const [tables, setTables] = useState(initialTables);
+  const [risk, setRisk] = useState(initialRisk);
+  const [brief, setBrief] = useState<string | null>(null);
+  const [briefLoading, setBriefLoading] = useState(false);
+  const alertedRef = useRef<Set<string>>(new Set());
 
   const refetchOrders = useCallback(async () => {
     setOrders(await getTodayOrders(createClient(), restaurant.id));
@@ -170,6 +182,34 @@ export function DashboardClient({
   const refetchTables = useCallback(async () => {
     setTables(await getTables(createClient(), restaurant.id));
   }, [restaurant.id]);
+  const refetchRisk = useCallback(async () => {
+    const fresh = await getDishRisk(createClient(), restaurant.id);
+    // Alert once per dish when its predicted death crosses the threshold.
+    for (const dish of atRiskDishes(fresh)) {
+      if (
+        dish.minutes_to_86! <= RISK_ALERT_MINUTES &&
+        !alertedRef.current.has(dish.id)
+      ) {
+        alertedRef.current.add(dish.id);
+        toast.warning(`${dish.name}: 86 in ${formatEta(dish.minutes_to_86!)}`, {
+          description: `${dish.portions_left} portions left at current pace.`,
+        });
+      }
+    }
+    for (const dish of fresh) {
+      if (dish.minutes_to_86 === null && alertedRef.current.has(dish.id)) {
+        alertedRef.current.delete(dish.id); // recovered — re-arm the alert
+      }
+    }
+    setRisk(fresh);
+  }, [restaurant.id]);
+
+  // Velocity is a sliding 30-min window: it changes with time even without
+  // new events, so recompute every 60s on top of realtime triggers.
+  useEffect(() => {
+    const t = setInterval(refetchRisk, 60000);
+    return () => clearInterval(t);
+  }, [refetchRisk]);
 
   useEffect(() => {
     const supabase = createClient();
@@ -190,7 +230,10 @@ export function DashboardClient({
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "stock_events", filter: `restaurant_id=eq.${restaurant.id}` },
-        () => debounced("ingredients", refetchIngredients)
+        () => {
+          debounced("ingredients", refetchIngredients);
+          debounced("risk", refetchRisk);
+        }
       )
       .on(
         "postgres_changes",
@@ -208,7 +251,7 @@ export function DashboardClient({
       timers.forEach(clearTimeout);
       supabase.removeChannel(channel);
     };
-  }, [restaurant.id, refetchOrders, refetchIngredients, refetchTables]);
+  }, [restaurant.id, refetchOrders, refetchIngredients, refetchTables, refetchRisk]);
 
   const stats = useMemo(() => computeDayStats(orders), [orders]);
   const lowCount = ingredients.filter(
@@ -228,6 +271,18 @@ export function DashboardClient({
     if (!result.ok) toast.error(result.error);
     refetchTables();
   }
+
+  async function loadBrief() {
+    setBriefLoading(true);
+    const result = await getMorningBrief(restaurant.id);
+    setBriefLoading(false);
+    if (result.ok && result.data) setBrief(result.data.brief);
+    else if (!result.ok) toast.error(result.error);
+  }
+
+  const dying = atRiskDishes(risk);
+  const dead = risk.filter((d) => d.portions_left <= 0);
+  const critical = dying.filter((d) => d.minutes_to_86! <= RISK_ALERT_MINUTES);
 
   return (
     <div className="mx-auto w-full max-w-6xl flex-1 px-4 pb-16">
@@ -285,6 +340,115 @@ export function DashboardClient({
             />
           </CardContent>
         </Card>
+      </div>
+
+      <div className="mt-8 grid gap-4 lg:grid-cols-[1fr_380px]">
+        <section>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-medium uppercase tracking-widest text-muted-foreground">
+              86-risk radar
+            </h2>
+            <Button asChild size="sm" variant="outline">
+              <Link href="/dashboard/prep">Tomorrow&apos;s prep sheet</Link>
+            </Button>
+          </div>
+
+          {critical.length > 0 && (
+            <div className="mb-3 rounded-lg border border-red-900/60 bg-red-950/30 px-4 py-3">
+              <p className="text-sm font-medium text-red-400">
+                {critical.length} dish{critical.length > 1 ? "es" : ""} predicted to 86
+                within {RISK_ALERT_MINUTES} minutes — prep more or push alternatives.
+              </p>
+            </div>
+          )}
+
+          {dying.length === 0 && dead.length === 0 ? (
+            <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+              No dishes at risk. Predictions appear as soon as orders build up
+              velocity.
+            </p>
+          ) : (
+            <div className="space-y-1.5">
+              {dying.map((dish) => {
+                const mins = dish.minutes_to_86!;
+                const level =
+                  mins <= RISK_ALERT_MINUTES ? "critical" : mins <= 90 ? "warm" : "calm";
+                return (
+                  <div
+                    key={dish.id}
+                    className={`flex items-center justify-between gap-3 rounded-md border px-3 py-2 ${
+                      level === "critical"
+                        ? "border-red-900/60 bg-red-950/30"
+                        : level === "warm"
+                          ? "border-amber-800/50 bg-amber-950/20"
+                          : "bg-card"
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{dish.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {dish.portions_left} left · {dish.velocity_30min}/30min pace
+                      </p>
+                    </div>
+                    <Badge
+                      variant={level === "critical" ? "destructive" : "outline"}
+                      className={`shrink-0 font-mono tabular-nums ${
+                        level === "warm" ? "border-amber-500/40 text-amber-400" : ""
+                      }`}
+                    >
+                      86 in {formatEta(mins)}
+                    </Badge>
+                  </div>
+                );
+              })}
+              {dead.map((dish) => (
+                <div
+                  key={dish.id}
+                  className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 opacity-60"
+                >
+                  <p className="truncate text-sm font-medium">{dish.name}</p>
+                  <Badge variant="destructive" className="shrink-0 font-mono">
+                    86&apos;d
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section>
+          <h2 className="mb-3 text-sm font-medium uppercase tracking-widest text-muted-foreground">
+            Manager brief
+          </h2>
+          <Card className="gap-3 py-4">
+            <CardContent className="px-4">
+              {brief ? (
+                <div className="space-y-2 text-sm leading-relaxed">
+                  {brief
+                    .split("\n")
+                    .filter((line) => line.trim())
+                    .map((line, i) => (
+                      <p key={i}>{line}</p>
+                    ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  A Gemini-written read on today: risks, what to prep, what to
+                  push — grounded in live orders and stock.
+                </p>
+              )}
+              <Button
+                size="sm"
+                variant="secondary"
+                className="mt-4 w-full"
+                disabled={briefLoading}
+                onClick={loadBrief}
+              >
+                {briefLoading ? "Reading the room…" : brief ? "Refresh brief" : "Generate brief"}
+              </Button>
+            </CardContent>
+          </Card>
+        </section>
       </div>
 
       <Tabs defaultValue="orders" className="mt-8">

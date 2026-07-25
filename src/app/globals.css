@@ -128,3 +128,14 @@
     @apply font-sans;
   }
 }
+
+@media print {
+  :root {
+    --background: #ffffff;
+    --foreground: #171717;
+    --card: #ffffff;
+    --card-foreground: #171717;
+    --muted-foreground: #52514e;
+    --border: #d4d4d4;
+  }
+}

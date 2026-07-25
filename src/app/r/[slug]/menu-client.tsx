@@ -11,9 +11,16 @@ import {
   type Restaurant,
   type RestaurantTable,
 } from "@/lib/engine";
-import { placeOrder } from "@/app/actions";
+import { placeOrder, suggestSwap, type SwapSuggestion } from "@/app/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Sheet,
   SheetContent,
@@ -62,6 +69,10 @@ export function MenuClient({
   const [tableId, setTableId] = useState<string | null>(null);
   const [placing, setPlacing] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [swapFor, setSwapFor] = useState<DishAvailability | null>(null);
+  const [swapLoading, setSwapLoading] = useState(false);
+  const [swaps, setSwaps] = useState<SwapSuggestion[]>([]);
+  const [swapError, setSwapError] = useState<string | null>(null);
   const dishesRef = useRef(dishes);
   useEffect(() => {
     dishesRef.current = dishes;
@@ -156,6 +167,17 @@ export function MenuClient({
   const setQty = (dishId: string, qty: number) =>
     setCart((c) => ({ ...c, [dishId]: Math.max(0, qty) }));
 
+  async function openSwap(dish: DishAvailability) {
+    setSwapFor(dish);
+    setSwaps([]);
+    setSwapError(null);
+    setSwapLoading(true);
+    const result = await suggestSwap(dish.id);
+    setSwapLoading(false);
+    if (result.ok && result.data) setSwaps(result.data.suggestions);
+    else if (!result.ok) setSwapError(result.error);
+  }
+
   async function submitOrder() {
     setPlacing(true);
     const result = await placeOrder(
@@ -244,6 +266,15 @@ export function MenuClient({
                       )}
                     </div>
 
+                    {out && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => openSwap(dish)}
+                      >
+                        Suggest a swap
+                      </Button>
+                    )}
                     {!out &&
                       (qty === 0 ? (
                         <Button
@@ -284,6 +315,48 @@ export function MenuClient({
           </div>
         </section>
       ))}
+
+      <Dialog open={swapFor !== null} onOpenChange={(open) => !open && setSwapFor(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{swapFor?.name} is 86&apos;d</DialogTitle>
+            <DialogDescription>
+              {swapLoading
+                ? "Finding the closest match still in the kitchen…"
+                : "Closest available alternatives, picked from live stock:"}
+            </DialogDescription>
+          </DialogHeader>
+          {swapError && <p className="text-sm text-destructive">{swapError}</p>}
+          <div className="space-y-3">
+            {swaps.map((s) => (
+              <div key={s.dishId} className="rounded-lg border bg-card p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <VegMark veg={s.veg} />
+                    <p className="font-medium">{s.name}</p>
+                  </div>
+                  <span className="shrink-0 text-sm text-muted-foreground">
+                    {formatINR(s.price)}
+                  </span>
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">{s.reason}</p>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="mt-2 w-full"
+                  onClick={() => {
+                    setQty(s.dishId, (cart[s.dishId] ?? 0) + 1);
+                    setSwapFor(null);
+                    toast.success(`${s.name} added to your order`);
+                  }}
+                >
+                  Add instead
+                </Button>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {cartCount > 0 && (
         <div className="fixed inset-x-0 bottom-0 z-20 border-t border-border/60 bg-background/95 p-4 backdrop-blur">
