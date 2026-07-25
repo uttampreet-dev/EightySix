@@ -31,7 +31,6 @@ export default function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<"owner" | "kitchen">("owner");
-  const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -44,7 +43,10 @@ export default function SignupPage() {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { role } },
+      options: {
+        data: { role },
+        emailRedirectTo: `${location.origin}/auth/callback?next=/dashboard`,
+      },
     });
     setBusy(false);
     if (error) {
@@ -60,25 +62,6 @@ export default function SignupPage() {
     setStep("verify");
   }
 
-  async function verify(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    const supabase = createClient();
-    const { error } = await supabase.auth.verifyOtp({
-      email,
-      token: code.trim(),
-      type: "email",
-    });
-    setBusy(false);
-    if (error) {
-      setError(error.message);
-      return;
-    }
-    router.push("/dashboard");
-    router.refresh();
-  }
-
   async function resend() {
     const supabase = createClient();
     const { error } = await supabase.auth.resend({ type: "signup", email });
@@ -91,35 +74,25 @@ export default function SignupPage() {
         <CardHeader>
           <CardTitle>Check your email</CardTitle>
           <CardDescription>
-            We sent a 6-digit code to {email}. Enter it to verify your account.
+            We sent a verification link to {email}. Click it to confirm your
+            account — you&apos;ll land in the dashboard automatically.
           </CardDescription>
         </CardHeader>
-        <form onSubmit={verify}>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="code">Verification code</Label>
-              <Input
-                id="code"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                placeholder="123456"
-                required
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-              />
-            </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            {notice && <p className="text-sm text-muted-foreground">{notice}</p>}
-          </CardContent>
-          <CardFooter className="mt-6 flex-col gap-3">
-            <Button type="submit" className="w-full" disabled={busy}>
-              {busy ? "Verifying…" : "Verify and sign in"}
-            </Button>
-            <Button type="button" variant="ghost" className="w-full" onClick={resend}>
-              Resend code
-            </Button>
-          </CardFooter>
-        </form>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Opened the link on another device? Just{" "}
+            <Link href="/login" className="text-foreground underline underline-offset-4">
+              sign in
+            </Link>{" "}
+            with your email and password after confirming.
+          </p>
+          {notice && <p className="text-sm text-muted-foreground">{notice}</p>}
+        </CardContent>
+        <CardFooter className="mt-2">
+          <Button type="button" variant="ghost" className="w-full" onClick={resend}>
+            Resend link
+          </Button>
+        </CardFooter>
       </Card>
     );
   }
@@ -129,7 +102,7 @@ export default function SignupPage() {
       <CardHeader>
         <CardTitle>Create a staff account</CardTitle>
         <CardDescription>
-          Email verification with a one-time code.
+          We&apos;ll email you a verification link.
         </CardDescription>
       </CardHeader>
       <form onSubmit={submit}>

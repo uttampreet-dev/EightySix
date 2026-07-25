@@ -37,7 +37,7 @@ function LoginForm() {
     if (error) {
       setError(
         error.message === "Email not confirmed"
-          ? "Email not verified yet — check your inbox for the code, or sign up again to resend."
+          ? "Email not verified yet — click the link in your inbox first."
           : error.message
       );
       setBusy(false);
