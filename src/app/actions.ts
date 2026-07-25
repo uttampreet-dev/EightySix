@@ -259,6 +259,93 @@ Focus on actions: what to prep, what to push, what to buy. Be specific and terse
   }
 }
 
+// Popularity weights for the dinner-rush simulator. Unlisted dishes weight 1.
+const RUSH_WEIGHTS: Record<string, number> = {
+  "Butter Naan": 6,
+  "Butter Paneer": 5,
+  "Butter Chicken": 5,
+  "Dal Makhani": 4,
+  "Garlic Naan": 4,
+  "Chicken Biryani": 4,
+  "Paneer Tikka": 3,
+  "Tandoori Chicken (Half)": 3,
+  "Tandoori Roti": 3,
+  "Chicken Tikka Masala": 2,
+  "Masala Chai": 2,
+  "Sweet Lassi": 2,
+};
+
+function weightedPick<T extends { name: string }>(items: T[]): T {
+  const total = items.reduce((s, i) => s + (RUSH_WEIGHTS[i.name] ?? 1), 0);
+  let roll = Math.random() * total;
+  for (const item of items) {
+    roll -= RUSH_WEIGHTS[item.name] ?? 1;
+    if (roll <= 0) return item;
+  }
+  return items[items.length - 1];
+}
+
+// One synthetic order burst. The client loop calls this every few seconds
+// during a simulated rush; every order flows through the exact same tables
+// and triggers as a real one, so every screen reacts for real.
+export async function rushTick(
+  restaurantId: string
+): Promise<ActionResult<{ placed: string[] }>> {
+  const supabase = createAdminClient();
+
+  const availability = await getAvailability(supabase, restaurantId);
+  const candidates = availability.filter((d) => d.is_active && d.portions_left > 0);
+  if (candidates.length === 0)
+    return { ok: false, error: "Everything is 86'd — reset the demo to keep going." };
+
+  const { data: tables } = await supabase
+    .from("tables")
+    .select("id")
+    .eq("restaurant_id", restaurantId);
+  const tableId =
+    tables && tables.length > 0
+      ? tables[Math.floor(Math.random() * tables.length)].id
+      : null;
+
+  const itemCount = 1 + Math.floor(Math.random() * 3); // 1–3 dishes per order
+  const chosen = new Map<string, { dishId: string; name: string; qty: number }>();
+  for (let i = 0; i < itemCount; i++) {
+    const dish = weightedPick(candidates);
+    const existing = chosen.get(dish.id);
+    const qty = 1 + Math.floor(Math.random() * 2); // 1–2 portions
+    const capped = Math.min(qty, dish.portions_left - (existing?.qty ?? 0));
+    if (capped <= 0) continue;
+    chosen.set(dish.id, {
+      dishId: dish.id,
+      name: dish.name,
+      qty: (existing?.qty ?? 0) + capped,
+    });
+  }
+  if (chosen.size === 0) return { ok: true, data: { placed: [] } };
+
+  const { data: order, error: orderError } = await supabase
+    .from("orders")
+    .insert({ restaurant_id: restaurantId, table_id: tableId })
+    .select("id")
+    .single();
+  if (orderError) return { ok: false, error: orderError.message };
+
+  const items = [...chosen.values()];
+  const { error: itemsError } = await supabase.from("order_items").insert(
+    items.map((i) => ({ order_id: order.id, dish_id: i.dishId, qty: i.qty }))
+  );
+  if (itemsError) return { ok: false, error: itemsError.message };
+
+  return { ok: true, data: { placed: items.map((i) => `${i.name} ×${i.qty}`) } };
+}
+
+export async function resetDemo(): Promise<ActionResult> {
+  const supabase = createAdminClient();
+  const { error } = await supabase.rpc("reset_demo");
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
 export async function toggleTableStatus(tableId: string): Promise<ActionResult> {
   const supabase = createAdminClient();
   const { data: table, error: fetchError } = await supabase

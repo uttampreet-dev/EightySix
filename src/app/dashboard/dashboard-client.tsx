@@ -25,6 +25,8 @@ import {
 import {
   bumpOrderStatus,
   getMorningBrief,
+  resetDemo,
+  rushTick,
   toggleTableStatus,
   updateIngredient,
 } from "@/app/actions";
@@ -171,7 +173,55 @@ export function DashboardClient({
   const [risk, setRisk] = useState(initialRisk);
   const [brief, setBrief] = useState<string | null>(null);
   const [briefLoading, setBriefLoading] = useState(false);
+  const [rushActive, setRushActive] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const alertedRef = useRef<Set<string>>(new Set());
+
+  // Dinner rush: fire a synthetic order burst every ~2.5s for 90s.
+  useEffect(() => {
+    if (!rushActive) return;
+    let cancelled = false;
+    const startedAt = Date.now();
+    toast.info("Dinner rush started", {
+      description: "Synthetic orders for 90 seconds — watch every screen react.",
+    });
+
+    async function tick() {
+      if (cancelled) return;
+      if (Date.now() - startedAt > 90000) {
+        setRushActive(false);
+        toast.info("Dinner rush over");
+        return;
+      }
+      const result = await rushTick(restaurant.id);
+      if (!cancelled && !result.ok) {
+        toast.error(result.error);
+        setRushActive(false);
+      }
+    }
+
+    tick();
+    const interval = setInterval(tick, 2500);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [rushActive, restaurant.id]);
+
+  async function handleReset() {
+    setResetting(true);
+    const result = await resetDemo();
+    setResetting(false);
+    alertedRef.current.clear();
+    if (!result.ok) toast.error(result.error);
+    else {
+      toast.success("Demo reset", { description: "Stock, orders and tables restored." });
+      refetchOrders();
+      refetchIngredients();
+      refetchTables();
+      refetchRisk();
+    }
+  }
 
   const refetchOrders = useCallback(async () => {
     setOrders(await getTodayOrders(createClient(), restaurant.id));
@@ -297,6 +347,16 @@ export function DashboardClient({
             </p>
           </div>
           <div className="flex items-center gap-1">
+            <Button
+              size="sm"
+              variant={rushActive ? "destructive" : "default"}
+              onClick={() => setRushActive((v) => !v)}
+            >
+              {rushActive ? "■ Stop rush" : "Simulate dinner rush"}
+            </Button>
+            <Button size="sm" variant="outline" disabled={resetting} onClick={handleReset}>
+              {resetting ? "Resetting…" : "Reset demo"}
+            </Button>
             <Button asChild variant="ghost" size="sm">
               <Link href={`/r/${restaurant.slug}`}>Menu</Link>
             </Button>
