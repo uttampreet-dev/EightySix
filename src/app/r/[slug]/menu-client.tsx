@@ -15,7 +15,15 @@ import {
   type Restaurant,
   type RestaurantTable,
 } from "@/lib/engine";
-import { placeOrder, suggestSwap, type SwapSuggestion } from "@/app/actions";
+import {
+  createReservation,
+  placeOrder,
+  submitFeedback,
+  suggestSwap,
+  type SwapSuggestion,
+} from "@/app/actions";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -88,6 +96,52 @@ export function MenuClient({
   const myOrderIdsRef = useRef<string[]>([]);
   const orderStatusRef = useRef<Map<string, string>>(new Map());
   const storageKey = `eightysix-orders-${restaurant.id}`;
+  const [reserveOpen, setReserveOpen] = useState(false);
+  const [reserveBusy, setReserveBusy] = useState(false);
+  const [reserveForm, setReserveForm] = useState({
+    name: "",
+    phone: "",
+    partySize: "2",
+    reservedAt: "",
+    note: "",
+  });
+  const [rateFor, setRateFor] = useState<OrderWithItems | null>(null);
+  const [rating, setRating] = useState(0);
+  const [ratingComment, setRatingComment] = useState("");
+  const [ratedIds, setRatedIds] = useState<Set<string>>(new Set());
+
+  async function submitReservation(e: React.FormEvent) {
+    e.preventDefault();
+    setReserveBusy(true);
+    const result = await createReservation(restaurant.id, {
+      name: reserveForm.name,
+      phone: reserveForm.phone,
+      partySize: Number(reserveForm.partySize),
+      reservedAt: new Date(reserveForm.reservedAt).toISOString(),
+      note: reserveForm.note,
+    });
+    setReserveBusy(false);
+    if (!result.ok) toast.error(result.error);
+    else {
+      toast.success("Table reserved", {
+        description: `${reserveForm.name} · party of ${reserveForm.partySize} — the restaurant sees it instantly.`,
+      });
+      setReserveOpen(false);
+    }
+  }
+
+  async function submitRating() {
+    if (!rateFor || rating === 0) return;
+    const result = await submitFeedback(rateFor.id, rating, ratingComment);
+    if (!result.ok) toast.error(result.error);
+    else {
+      toast.success("Thanks for the feedback!");
+      setRatedIds((s) => new Set(s).add(rateFor.id));
+    }
+    setRateFor(null);
+    setRating(0);
+    setRatingComment("");
+  }
   const [placing, setPlacing] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [swapFor, setSwapFor] = useState<DishAvailability | null>(null);
@@ -289,12 +343,17 @@ export function MenuClient({
               <p className="text-xs text-muted-foreground">{restaurant.tagline}</p>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-500 opacity-60" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
-            </span>
-            <span className="text-xs text-muted-foreground">Live menu</span>
+          <div className="flex items-center gap-3">
+            <Button size="sm" variant="outline" onClick={() => setReserveOpen(true)}>
+              Reserve a table
+            </Button>
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-500 opacity-60" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
+              </span>
+              <span className="text-xs text-muted-foreground">Live</span>
+            </div>
           </div>
         </div>
       </header>
@@ -341,10 +400,123 @@ export function MenuClient({
               >
                 {order.status}
               </Badge>
+              {order.status === "served" && !ratedIds.has(order.id) && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0"
+                  onClick={() => setRateFor(order)}
+                >
+                  Rate ★
+                </Button>
+              )}
             </motion.div>
           ))}
         </section>
       )}
+
+      <Dialog open={reserveOpen} onOpenChange={setReserveOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Reserve a table</DialogTitle>
+            <DialogDescription>
+              The restaurant sees your booking the moment you confirm.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={submitReservation} className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="res-name">Name</Label>
+              <Input
+                id="res-name"
+                required
+                value={reserveForm.name}
+                onChange={(e) => setReserveForm({ ...reserveForm, name: e.target.value })}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="res-phone">Phone</Label>
+                <Input
+                  id="res-phone"
+                  type="tel"
+                  required
+                  value={reserveForm.phone}
+                  onChange={(e) => setReserveForm({ ...reserveForm, phone: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="res-party">Party size</Label>
+                <Input
+                  id="res-party"
+                  type="number"
+                  min="1"
+                  max="20"
+                  required
+                  value={reserveForm.partySize}
+                  onChange={(e) => setReserveForm({ ...reserveForm, partySize: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="res-time">When</Label>
+              <Input
+                id="res-time"
+                type="datetime-local"
+                required
+                value={reserveForm.reservedAt}
+                onChange={(e) => setReserveForm({ ...reserveForm, reservedAt: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="res-note">Note (optional)</Label>
+              <Input
+                id="res-note"
+                placeholder="Window seat, birthday…"
+                value={reserveForm.note}
+                onChange={(e) => setReserveForm({ ...reserveForm, note: e.target.value })}
+              />
+            </div>
+            <Button type="submit" disabled={reserveBusy} className="w-full">
+              {reserveBusy ? "Booking…" : "Confirm reservation"}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={rateFor !== null} onOpenChange={(open) => !open && setRateFor(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>How was it?</DialogTitle>
+            <DialogDescription>
+              Table {rateFor?.tables?.label ?? "—"} ·{" "}
+              {rateFor?.order_items.map((i) => i.dishes?.name).join(", ")}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-center gap-2 py-2">
+            {[1, 2, 3, 4, 5].map((star) => (
+              <button
+                key={star}
+                type="button"
+                onClick={() => setRating(star)}
+                className={`text-3xl transition-transform hover:scale-110 ${
+                  star <= rating ? "text-brass" : "text-muted-foreground/30"
+                }`}
+                aria-label={`${star} star${star > 1 ? "s" : ""}`}
+              >
+                ★
+              </button>
+            ))}
+          </div>
+          <Input
+            placeholder="Anything to add? (optional)"
+            value={ratingComment}
+            onChange={(e) => setRatingComment(e.target.value)}
+          />
+          <Button onClick={submitRating} disabled={rating === 0} className="w-full">
+            Submit rating
+          </Button>
+        </DialogContent>
+      </Dialog>
 
       {categories.map(({ name, dishes: categoryDishes }) => (
         <section key={name} className="mt-10">
