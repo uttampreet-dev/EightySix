@@ -354,6 +354,180 @@ export async function rushTick(
   return { ok: true, data: { placed: items.map((i) => `${i.name} ×${i.qty}`) } };
 }
 
+// One-tap radar intervention. Restock quantity is computed from the recipe
+// graph: enough of the scarcest ingredient to cover ~2h at current velocity.
+export async function interveneOnDish(
+  dishId: string,
+  kind: "restock" | "kill"
+): Promise<ActionResult<{ summary: string }>> {
+  const supabase = createAdminClient();
+
+  if (kind === "kill") {
+    const { data: dish, error } = await supabase
+      .from("dishes")
+      .update({ is_active: false })
+      .eq("id", dishId)
+      .select("name")
+      .single();
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, data: { summary: `${dish.name} struck from every menu.` } };
+  }
+
+  const { data: risk, error: riskError } = await supabase
+    .from("dish_risk")
+    .select("name, portions_left, velocity_30min")
+    .eq("id", dishId)
+    .single();
+  if (riskError) return { ok: false, error: riskError.message };
+
+  const { data: recipe, error: recipeError } = await supabase
+    .from("recipe_items")
+    .select("qty_per_portion, ingredients(id, name, unit, stock_qty)")
+    .eq("dish_id", dishId)
+    .returns<{ qty_per_portion: number; ingredients: { id: string; name: string; unit: string; stock_qty: number } | null }[]>();
+  if (recipeError) return { ok: false, error: recipeError.message };
+
+  const limiting = recipe
+    .filter((r) => r.ingredients)
+    .map((r) => ({
+      ...r.ingredients!,
+      perPortion: Number(r.qty_per_portion),
+      ratio: Number(r.ingredients!.stock_qty) / Number(r.qty_per_portion),
+    }))
+    .sort((a, b) => a.ratio - b.ratio)[0];
+  if (!limiting) return { ok: false, error: "Dish has no recipe." };
+
+  // cover 2h at current pace (min 10 portions so the action always helps)
+  const targetPortions = Math.max(risk.velocity_30min * 4, 10);
+  const needed = targetPortions * limiting.perPortion - Number(limiting.stock_qty);
+  const delta = Math.max(0.5, Math.ceil(needed * 2) / 2);
+
+  const { error } = await supabase
+    .from("stock_events")
+    .insert({ ingredient_id: limiting.id, delta, reason: "prep" });
+  if (error) return { ok: false, error: error.message };
+
+  return {
+    ok: true,
+    data: {
+      summary: `+${delta} ${limiting.unit} ${limiting.name} — covers ~2h of ${risk.name} at current pace.`,
+    },
+  };
+}
+
+// Deterministic what-if: distribute N diners' expected orders by popularity,
+// walk the recipe graph against live stock, report exactly what breaks.
+export async function planService(
+  restaurantId: string,
+  diners: number
+): Promise<
+  ActionResult<{
+    dishes: { name: string; expected: number; served: number; diesAtCover: number | null }[];
+    shortfalls: { name: string; unit: string; have: number; need: number; buy: number; cost: number }[];
+    projectedRevenue: number;
+    lostRevenue: number;
+  }>
+> {
+  if (diners < 1 || diners > 1000) return { ok: false, error: "Diners must be 1–1000." };
+  const supabase = createAdminClient();
+
+  const [availability, { data: recipes }, { data: ingredients }] = await Promise.all([
+    getAvailability(supabase, restaurantId),
+    supabase
+      .from("recipe_items")
+      .select("dish_id, ingredient_id, qty_per_portion"),
+    supabase
+      .from("ingredients")
+      .select("id, name, unit, stock_qty, cost_per_unit")
+      .eq("restaurant_id", restaurantId),
+  ]);
+
+  const active = availability.filter((d) => d.is_active);
+  const dishIds = new Set(active.map((d) => d.id));
+  const recipeByDish = new Map<string, { ingredient_id: string; qty: number }[]>();
+  for (const r of recipes ?? []) {
+    if (!dishIds.has(r.dish_id)) continue;
+    if (!recipeByDish.has(r.dish_id)) recipeByDish.set(r.dish_id, []);
+    recipeByDish.get(r.dish_id)!.push({ ingredient_id: r.ingredient_id, qty: Number(r.qty_per_portion) });
+  }
+
+  // expected portions per dish: diners × ~1.8 items each, split by popularity
+  const totalWeight = active.reduce((s, d) => s + (RUSH_WEIGHTS[d.name] ?? 1), 0);
+  const totalPortions = Math.round(diners * 1.8);
+  const expected = active.map((d) => ({
+    dish: d,
+    portions: Math.round((totalPortions * (RUSH_WEIGHTS[d.name] ?? 1)) / totalWeight),
+  }));
+
+  // walk stock: serve dishes round-robin proportionally, find where each dies
+  const stock = new Map((ingredients ?? []).map((i) => [i.id, Number(i.stock_qty)]));
+  const results = expected.map((e) => ({
+    name: e.dish.name,
+    price: e.dish.price,
+    expected: e.portions,
+    served: 0,
+    diesAtCover: null as number | null,
+  }));
+
+  const maxRounds = Math.max(...expected.map((e) => e.portions), 0);
+  for (let round = 0; round < maxRounds; round++) {
+    for (let i = 0; i < expected.length; i++) {
+      if (round >= expected[i].portions) continue;
+      const recipe = recipeByDish.get(expected[i].dish.id) ?? [];
+      const canServe = recipe.every((r) => (stock.get(r.ingredient_id) ?? 0) >= r.qty);
+      if (canServe) {
+        for (const r of recipe) stock.set(r.ingredient_id, stock.get(r.ingredient_id)! - r.qty);
+        results[i].served++;
+      } else if (results[i].diesAtCover === null) {
+        results[i].diesAtCover = results[i].served;
+      }
+    }
+  }
+
+  // shortfalls: how much of each ingredient the unserved portions still need
+  const shortfallMap = new Map<string, number>();
+  for (let i = 0; i < results.length; i++) {
+    const missing = results[i].expected - results[i].served;
+    if (missing <= 0) continue;
+    for (const r of recipeByDish.get(expected[i].dish.id) ?? []) {
+      shortfallMap.set(r.ingredient_id, (shortfallMap.get(r.ingredient_id) ?? 0) + missing * r.qty);
+    }
+  }
+  const ingredientById = new Map((ingredients ?? []).map((i) => [i.id, i]));
+  const shortfalls = [...shortfallMap.entries()]
+    .map(([id, need]) => {
+      const ing = ingredientById.get(id)!;
+      const remaining = stock.get(id) ?? 0;
+      const buy = Math.max(0, Math.ceil((need - remaining) * 2) / 2);
+      return {
+        name: ing.name,
+        unit: ing.unit,
+        have: Number(ing.stock_qty),
+        need: Math.round(need * 100) / 100,
+        buy,
+        cost: Math.round(buy * Number(ing.cost_per_unit)),
+      };
+    })
+    .filter((s) => s.buy > 0)
+    .sort((a, b) => b.cost - a.cost);
+
+  const projectedRevenue = results.reduce((s, r) => s + r.served * r.price, 0);
+  const lostRevenue = results.reduce((s, r) => s + (r.expected - r.served) * r.price, 0);
+
+  return {
+    ok: true,
+    data: {
+      dishes: results
+        .filter((r) => r.expected > 0)
+        .sort((a, b) => (a.diesAtCover ?? 9999) - (b.diesAtCover ?? 9999))
+        .map(({ name, expected: exp, served, diesAtCover }) => ({ name, expected: exp, served, diesAtCover })),
+      shortfalls,
+      projectedRevenue,
+      lostRevenue,
+    },
+  };
+}
+
 export async function setDishActive(
   dishId: string,
   active: boolean

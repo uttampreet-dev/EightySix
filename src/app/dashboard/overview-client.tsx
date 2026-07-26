@@ -23,11 +23,31 @@ import {
   type Restaurant,
   type TodayOrder,
 } from "@/lib/engine";
-import { getMorningBrief } from "@/app/actions";
+import { getMorningBrief, interveneOnDish, planService } from "@/app/actions";
 import { ChefHat, IndianRupee, Package, ReceiptText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+
+type ServicePlan = NonNullable<
+  Extract<Awaited<ReturnType<typeof planService>>, { ok: true }>["data"]
+>;
 import { Sparkline } from "@/components/sparkline";
 import { NumberTicker } from "@/components/number-ticker";
 
@@ -85,7 +105,31 @@ export function OverviewClient({
   const [events, setEvents] = useState(initialEvents);
   const [brief, setBrief] = useState<string | null>(null);
   const [briefLoading, setBriefLoading] = useState(false);
+  const [plannerOpen, setPlannerOpen] = useState(false);
+  const [plannerDiners, setPlannerDiners] = useState("120");
+  const [plannerBusy, setPlannerBusy] = useState(false);
+  const [plan, setPlan] = useState<ServicePlan | null>(null);
+  const [acting, setActing] = useState<string | null>(null);
   const alertedRef = useRef<Set<string>>(new Set());
+
+  async function intervene(dishId: string, kind: "restock" | "kill") {
+    setActing(dishId + kind);
+    const result = await interveneOnDish(dishId, kind);
+    setActing(null);
+    if (result.ok && result.data) toast.success(result.data.summary);
+    else if (!result.ok) toast.error(result.error);
+    refetchRisk();
+    refetchIngredients();
+    refetchEvents();
+  }
+
+  async function runPlanner() {
+    setPlannerBusy(true);
+    const result = await planService(restaurant.id, Number(plannerDiners));
+    setPlannerBusy(false);
+    if (result.ok && result.data) setPlan(result.data);
+    else if (!result.ok) toast.error(result.error);
+  }
 
   const refetchOrders = useCallback(async () => {
     setOrders(await getTodayOrders(createClient(), restaurant.id));
@@ -277,9 +321,14 @@ export function OverviewClient({
 
       <div className="mt-8 grid gap-4 lg:grid-cols-[1fr_380px]">
         <section>
-          <h2 className="mb-3 font-mono text-[11px] uppercase tracking-[0.25em] text-muted-foreground">
-            86-risk radar
-          </h2>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="font-mono text-[11px] uppercase tracking-[0.25em] text-muted-foreground">
+              86-risk radar
+            </h2>
+            <Button size="sm" variant="outline" onClick={() => setPlannerOpen(true)}>
+              Plan a service
+            </Button>
+          </div>
 
           {dying.filter((d) => d.minutes_to_86! <= RISK_ALERT_MINUTES).length > 0 && (
             <div className="mb-3 rounded-lg border border-red-900/60 bg-red-950/30 px-4 py-3">
@@ -333,14 +382,36 @@ export function OverviewClient({
                           {dish.portions_left} left · {dish.velocity_30min}/30min pace
                         </p>
                       </div>
-                      <Badge
-                        variant={level === "critical" ? "destructive" : "outline"}
-                        className={`shrink-0 font-mono tabular-nums ${
-                          level === "warm" ? "border-amber-500/40 text-amber-400" : ""
-                        }`}
-                      >
-                        86 in {formatEta(mins)}
-                      </Badge>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <Badge
+                          variant={level === "critical" ? "destructive" : "outline"}
+                          className={`font-mono tabular-nums ${
+                            level === "warm" ? "border-amber-500/40 text-amber-400" : ""
+                          }`}
+                        >
+                          86 in {formatEta(mins)}
+                        </Badge>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-xs text-brass"
+                          disabled={acting === dish.id + "restock"}
+                          onClick={() => intervene(dish.id, "restock")}
+                          title="Restock the scarcest ingredient — quantity computed to cover ~2h at current pace"
+                        >
+                          {acting === dish.id + "restock" ? "…" : "Prep"}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-xs text-red-400"
+                          disabled={acting === dish.id + "kill"}
+                          onClick={() => intervene(dish.id, "kill")}
+                          title="Strike it from every menu now"
+                        >
+                          86
+                        </Button>
+                      </div>
                     </motion.div>
                   );
                 })}
@@ -454,6 +525,123 @@ export function OverviewClient({
           </div>
         </section>
       </div>
+
+      <Dialog open={plannerOpen} onOpenChange={setPlannerOpen}>
+        <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Plan a service</DialogTitle>
+            <DialogDescription>
+              A deterministic what-if: expected orders are distributed by dish
+              popularity and walked through the recipe graph against live stock —
+              no guesswork, every number is computed.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex items-end gap-3">
+            <div className="space-y-1.5">
+              <p className="text-xs text-muted-foreground">Expected diners</p>
+              <Input
+                type="number"
+                min="1"
+                max="1000"
+                value={plannerDiners}
+                onChange={(e) => setPlannerDiners(e.target.value)}
+                className="w-32 tabular-nums"
+              />
+            </div>
+            <Button onClick={runPlanner} disabled={plannerBusy}>
+              {plannerBusy ? "Computing…" : "Run the numbers"}
+            </Button>
+          </div>
+
+          {plan && (
+            <div className="space-y-5">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-lg border bg-card p-3">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                    Projected revenue
+                  </p>
+                  <p className="mt-1 font-serif text-2xl tabular-nums text-green-500">
+                    {formatINR(plan.projectedRevenue)}
+                  </p>
+                </div>
+                <div className="rounded-lg border bg-card p-3">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                    Lost to stockouts
+                  </p>
+                  <p className="mt-1 font-serif text-2xl tabular-nums text-red-400">
+                    {formatINR(plan.lostRevenue)}
+                  </p>
+                </div>
+              </div>
+
+              {plan.dishes.filter((d) => d.diesAtCover !== null).length > 0 ? (
+                <div>
+                  <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                    Dishes that die at this volume
+                  </p>
+                  <div className="space-y-1">
+                    {plan.dishes
+                      .filter((d) => d.diesAtCover !== null)
+                      .map((d) => (
+                        <div
+                          key={d.name}
+                          className="flex items-center justify-between rounded-md border border-red-900/50 bg-red-950/20 px-3 py-1.5 text-sm"
+                        >
+                          <span>{d.name}</span>
+                          <span className="font-mono text-xs text-red-400">
+                            dies after {d.diesAtCover} of {d.expected} expected
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="rounded-lg border border-green-900/50 bg-green-950/15 px-3 py-2 text-sm text-green-500">
+                  Stock survives the whole service — every expected order can be
+                  served.
+                </p>
+              )}
+
+              {plan.shortfalls.length > 0 && (
+                <div>
+                  <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                    Buy before service
+                  </p>
+                  <div className="overflow-hidden rounded-lg border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Ingredient</TableHead>
+                          <TableHead className="text-right">Have</TableHead>
+                          <TableHead className="text-right">Buy</TableHead>
+                          <TableHead className="text-right">Est. cost</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {plan.shortfalls.map((s) => (
+                          <TableRow key={s.name}>
+                            <TableCell className="font-medium">{s.name}</TableCell>
+                            <TableCell className="text-right tabular-nums text-muted-foreground">
+                              {s.have} {s.unit}
+                            </TableCell>
+                            <TableCell className="text-right font-medium tabular-nums text-brass">
+                              +{s.buy} {s.unit}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums text-muted-foreground">
+                              {formatINR(s.cost)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

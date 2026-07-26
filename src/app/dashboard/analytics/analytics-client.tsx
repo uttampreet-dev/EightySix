@@ -6,9 +6,11 @@ import {
   computeAnalytics,
   formatINR,
   getOrdersSince,
+  orderTotal,
   type Restaurant,
   type TodayOrder,
 } from "@/lib/engine";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -54,7 +56,7 @@ function DayBars({
               </span>
             )}
             <div
-              className="w-full max-w-9 rounded-t-[4px] transition-opacity group-hover:opacity-80"
+              className="w-full max-w-9 rounded-t-lg transition-opacity group-hover:opacity-80"
               style={{
                 height: `${Math.max(h, d.revenue > 0 ? 3 : 1)}%`,
                 background: d.revenue > 0 ? SERIES : "oklch(0.95 0.03 85 / 0.08)",
@@ -99,7 +101,7 @@ function HourStrip({ data }: { data: { hour: number; count: number }[] }) {
   const max = Math.max(1, ...data.map((d) => d.count));
   return (
     <div>
-      <div className="flex h-16 items-end gap-[3px]">
+      <div className="flex h-16 items-end gap-0.75">
         {data.map((d) => (
           <div
             key={d.hour}
@@ -163,11 +165,43 @@ export function AnalyticsClient({
 
   return (
     <div className="mx-auto w-full max-w-5xl">
-      <div className="mt-6">
-        <h1 className="font-serif text-2xl font-medium tracking-tight">Analytics</h1>
-        <p className="text-xs text-muted-foreground">
-          Last 7 days · computed live from real orders — updates as they happen
-        </p>
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="font-serif text-2xl font-medium tracking-tight">Analytics</h1>
+          <p className="text-xs text-muted-foreground">
+            Last 7 days · computed live from real orders — updates as they happen
+          </p>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            const rows = [
+              ["order_id", "placed_at", "table", "status", "items", "total_inr"],
+              ...orders.map((o) => [
+                o.id,
+                o.created_at,
+                o.tables?.label ?? "",
+                o.status,
+                o.order_items
+                  .map((i) => `${i.dishes?.name ?? "?"} x${i.qty}`)
+                  .join("; "),
+                String(orderTotal(o)),
+              ]),
+            ];
+            const csv = rows
+              .map((r) => r.map((c) => `"${String(c).replaceAll('"', '""')}"`).join(","))
+              .join("\n");
+            const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "eightysix-orders-7d.csv";
+            a.click();
+            URL.revokeObjectURL(url);
+          }}
+        >
+          Export CSV
+        </Button>
       </div>
 
       <div className="mt-6 grid gap-3 sm:grid-cols-3">
