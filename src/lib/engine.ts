@@ -156,6 +156,158 @@ export async function getOrdersByIds(
   return data ?? [];
 }
 
+export type Reservation = {
+  id: string;
+  restaurant_id: string;
+  name: string;
+  phone: string;
+  party_size: number;
+  reserved_at: string;
+  table_id: string | null;
+  status: "booked" | "seated" | "completed" | "cancelled";
+  note: string | null;
+  created_at: string;
+  tables: { label: string } | null;
+};
+
+export async function getReservations(
+  supabase: SupabaseClient,
+  restaurantId: string
+): Promise<Reservation[]> {
+  const { data, error } = await supabase
+    .from("reservations")
+    .select("*, tables(label)")
+    .eq("restaurant_id", restaurantId)
+    .order("reserved_at", { ascending: true })
+    .returns<Reservation[]>();
+  if (error) throw error;
+  return data ?? [];
+}
+
+export type Feedback = {
+  id: string;
+  restaurant_id: string;
+  order_id: string;
+  rating: number;
+  comment: string | null;
+  created_at: string;
+};
+
+export async function getFeedback(
+  supabase: SupabaseClient,
+  restaurantId: string
+): Promise<Feedback[]> {
+  const { data, error } = await supabase
+    .from("feedback")
+    .select("*")
+    .eq("restaurant_id", restaurantId)
+    .order("created_at", { ascending: false })
+    .returns<Feedback[]>();
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function getOrdersSince(
+  supabase: SupabaseClient,
+  restaurantId: string,
+  sinceIso: string
+): Promise<TodayOrder[]> {
+  const { data, error } = await supabase
+    .from("orders")
+    .select(
+      "id, status, created_at, table_id, order_items(id, qty, dishes(name, price, category)), tables(label)"
+    )
+    .eq("restaurant_id", restaurantId)
+    .gte("created_at", sinceIso)
+    .order("created_at", { ascending: false })
+    .returns<TodayOrder[]>();
+  if (error) throw error;
+  return data ?? [];
+}
+
+export type Analytics = {
+  perDay: { day: string; label: string; revenue: number; orders: number }[];
+  byCategory: { category: string; revenue: number; share: number }[];
+  topDishes: { name: string; qty: number; revenue: number }[];
+  byHour: { hour: number; count: number }[];
+  totals: { revenue: number; orders: number; avgOrder: number };
+};
+
+export function computeAnalytics(orders: TodayOrder[], days = 7): Analytics {
+  const dayBuckets = new Map<string, { revenue: number; orders: number }>();
+  const now = new Date();
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    dayBuckets.set(d.toDateString(), { revenue: 0, orders: 0 });
+  }
+
+  const categories = new Map<string, number>();
+  const dishes = new Map<string, { qty: number; revenue: number }>();
+  const hours = new Array<number>(24).fill(0);
+  let revenue = 0;
+
+  for (const order of orders) {
+    const total = orderTotal(order);
+    revenue += total;
+    const created = new Date(order.created_at);
+    const key = created.toDateString();
+    const bucket = dayBuckets.get(key);
+    if (bucket) {
+      bucket.revenue += total;
+      bucket.orders += 1;
+    }
+    hours[created.getHours()]++;
+    for (const item of order.order_items) {
+      const dish = item.dishes as
+        | { name: string; price: number; category?: string }
+        | null;
+      if (!dish) continue;
+      const line = item.qty * dish.price;
+      categories.set(
+        dish.category ?? "Other",
+        (categories.get(dish.category ?? "Other") ?? 0) + line
+      );
+      const existing = dishes.get(dish.name) ?? { qty: 0, revenue: 0 };
+      dishes.set(dish.name, {
+        qty: existing.qty + item.qty,
+        revenue: existing.revenue + line,
+      });
+    }
+  }
+
+  const perDay = [...dayBuckets.entries()].map(([day, v]) => ({
+    day,
+    label: new Date(day).toLocaleDateString("en-IN", { weekday: "short" }),
+    ...v,
+  }));
+  const byCategory = [...categories.entries()]
+    .map(([category, catRevenue]) => ({
+      category,
+      revenue: catRevenue,
+      share: revenue > 0 ? catRevenue / revenue : 0,
+    }))
+    .sort((a, b) => b.revenue - a.revenue);
+  const topDishes = [...dishes.entries()]
+    .map(([name, v]) => ({ name, ...v }))
+    .sort((a, b) => b.qty - a.qty)
+    .slice(0, 8);
+
+  return {
+    perDay,
+    byCategory,
+    topDishes,
+    byHour: hours.map((count, hour) => ({ hour, count })),
+    totals: {
+      revenue,
+      orders: orders.length,
+      avgOrder: orders.length > 0 ? revenue / orders.length : 0,
+    },
+  };
+}
+
+export const GST_RATE = 0.05; // 2.5% CGST + 2.5% SGST
+
 export function formatINR(n: number): string {
   return `₹${Math.round(n).toLocaleString("en-IN")}`;
 }

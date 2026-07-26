@@ -367,6 +367,221 @@ export async function setDishActive(
   return { ok: true };
 }
 
+export async function upsertDish(
+  restaurantId: string,
+  dish: {
+    id?: string;
+    name: string;
+    price: number;
+    category: string;
+    veg: boolean;
+  },
+  recipe: { ingredientId: string; qty: number }[]
+): Promise<ActionResult<{ dishId: string }>> {
+  if (!dish.name.trim()) return { ok: false, error: "Dish needs a name." };
+  if (dish.price <= 0) return { ok: false, error: "Price must be positive." };
+  if (recipe.length === 0)
+    return { ok: false, error: "A dish needs at least one recipe ingredient — availability is computed from it." };
+  if (recipe.some((r) => r.qty <= 0))
+    return { ok: false, error: "Recipe quantities must be positive." };
+
+  const supabase = createAdminClient();
+  let dishId = dish.id;
+
+  if (dishId) {
+    const { error } = await supabase
+      .from("dishes")
+      .update({ name: dish.name.trim(), price: dish.price, category: dish.category, veg: dish.veg })
+      .eq("id", dishId);
+    if (error) return { ok: false, error: error.message };
+  } else {
+    const { data, error } = await supabase
+      .from("dishes")
+      .insert({
+        restaurant_id: restaurantId,
+        name: dish.name.trim(),
+        price: dish.price,
+        category: dish.category,
+        veg: dish.veg,
+      })
+      .select("id")
+      .single();
+    if (error) return { ok: false, error: error.message };
+    dishId = data.id;
+  }
+
+  const { error: deleteError } = await supabase
+    .from("recipe_items")
+    .delete()
+    .eq("dish_id", dishId);
+  if (deleteError) return { ok: false, error: deleteError.message };
+
+  const { error: recipeError } = await supabase.from("recipe_items").insert(
+    recipe.map((r) => ({
+      dish_id: dishId,
+      ingredient_id: r.ingredientId,
+      qty_per_portion: r.qty,
+    }))
+  );
+  if (recipeError) return { ok: false, error: recipeError.message };
+
+  return { ok: true, data: { dishId: dishId! } };
+}
+
+export async function createIngredient(
+  restaurantId: string,
+  ingredient: {
+    name: string;
+    unit: string;
+    stockQty: number;
+    reorderLevel: number;
+    costPerUnit: number;
+  }
+): Promise<ActionResult> {
+  if (!ingredient.name.trim()) return { ok: false, error: "Ingredient needs a name." };
+  const supabase = createAdminClient();
+  const { error } = await supabase.from("ingredients").insert({
+    restaurant_id: restaurantId,
+    name: ingredient.name.trim(),
+    unit: ingredient.unit || "kg",
+    stock_qty: Math.max(0, ingredient.stockQty),
+    reorder_level: Math.max(0, ingredient.reorderLevel),
+    cost_per_unit: Math.max(0, ingredient.costPerUnit),
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+export async function createReservation(
+  restaurantId: string,
+  reservation: {
+    name: string;
+    phone: string;
+    partySize: number;
+    reservedAt: string;
+    note?: string;
+  }
+): Promise<ActionResult> {
+  if (!reservation.name.trim()) return { ok: false, error: "Name is required." };
+  if (!/^[0-9+\-\s]{8,15}$/.test(reservation.phone.trim()))
+    return { ok: false, error: "Enter a valid phone number." };
+  if (new Date(reservation.reservedAt).getTime() < Date.now() - 60000)
+    return { ok: false, error: "Pick a time in the future." };
+
+  const supabase = createAdminClient();
+  const { error } = await supabase.from("reservations").insert({
+    restaurant_id: restaurantId,
+    name: reservation.name.trim(),
+    phone: reservation.phone.trim(),
+    party_size: reservation.partySize,
+    reserved_at: reservation.reservedAt,
+    note: reservation.note?.trim() || null,
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+export async function updateReservation(
+  reservationId: string,
+  updates: {
+    status?: "booked" | "seated" | "completed" | "cancelled";
+    tableId?: string | null;
+  }
+): Promise<ActionResult> {
+  const supabase = createAdminClient();
+  const payload: Record<string, unknown> = {};
+  if (updates.status) payload.status = updates.status;
+  if (updates.tableId !== undefined) payload.table_id = updates.tableId;
+
+  const { error } = await supabase
+    .from("reservations")
+    .update(payload)
+    .eq("id", reservationId);
+  if (error) return { ok: false, error: error.message };
+
+  // Seating a party occupies its table; completing/cancelling frees it.
+  if (updates.status && updates.tableId !== undefined && updates.tableId) {
+    await supabase
+      .from("tables")
+      .update({ status: updates.status === "seated" ? "occupied" : "free" })
+      .eq("id", updates.tableId);
+  }
+  return { ok: true };
+}
+
+export async function submitFeedback(
+  orderId: string,
+  rating: number,
+  comment: string
+): Promise<ActionResult> {
+  if (rating < 1 || rating > 5) return { ok: false, error: "Rating must be 1–5." };
+  const supabase = createAdminClient();
+
+  const { data: order, error: orderError } = await supabase
+    .from("orders")
+    .select("restaurant_id, status")
+    .eq("id", orderId)
+    .single();
+  if (orderError) return { ok: false, error: "Order not found." };
+  if (order.status !== "served" && order.status !== "paid")
+    return { ok: false, error: "You can rate once your order is served." };
+
+  const { error } = await supabase.from("feedback").insert({
+    restaurant_id: order.restaurant_id,
+    order_id: orderId,
+    rating,
+    comment: comment.trim() || null,
+  });
+  if (error)
+    return {
+      ok: false,
+      error: error.code === "23505" ? "This order was already rated — thank you!" : error.message,
+    };
+  return { ok: true };
+}
+
+export async function createStaff(
+  email: string,
+  password: string,
+  role: "owner" | "kitchen"
+): Promise<ActionResult> {
+  if (!/^\S+@\S+\.\S+$/.test(email)) return { ok: false, error: "Enter a valid email." };
+  if (password.length < 8) return { ok: false, error: "Password needs 8+ characters." };
+  const supabase = createAdminClient();
+  const { error } = await supabase.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: { role },
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+export async function getFeedbackSummary(
+  restaurantId: string
+): Promise<ActionResult<{ summary: string }>> {
+  const supabase = createAdminClient();
+  const { data: rows } = await supabase
+    .from("feedback")
+    .select("rating, comment")
+    .eq("restaurant_id", restaurantId)
+    .order("created_at", { ascending: false })
+    .limit(50);
+  if (!rows || rows.length === 0)
+    return { ok: false, error: "No feedback yet to summarise." };
+
+  try {
+    const summary = await geminiText(
+      `Summarise this restaurant's diner feedback in 3 short plain-text bullets (themes + one action each). Ratings are 1–5.
+${rows.map((r) => `${r.rating}/5${r.comment ? ` — "${r.comment}"` : ""}`).join("\n")}`
+    );
+    return { ok: true, data: { summary } };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Summary failed." };
+  }
+}
+
 export async function resetDemo(): Promise<ActionResult> {
   const supabase = createAdminClient();
   const { error } = await supabase.rpc("reset_demo");
