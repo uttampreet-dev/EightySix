@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
@@ -40,6 +40,34 @@ export function KitchenClient({
   const [orders, setOrders] = useState(initialOrders);
   const [ingredients, setIngredients] = useState(initialIngredients);
   const [now, setNow] = useState(() => Date.now());
+  const [soundOn, setSoundOn] = useState(true);
+  const soundRef = useRef(true);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+
+  // KDS-style two-tone chime on new orders. WebAudio needs a user gesture
+  // first; until one happens the try/catch keeps it silent.
+  const chime = useCallback(() => {
+    if (!soundRef.current) return;
+    try {
+      audioCtxRef.current ??= new AudioContext();
+      const ctx = audioCtxRef.current;
+      const t = ctx.currentTime;
+      [880, 1174.66].forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.0001, t + i * 0.13);
+        gain.gain.exponentialRampToValueAtTime(0.15, t + i * 0.13 + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + i * 0.13 + 0.4);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(t + i * 0.13);
+        osc.stop(t + i * 0.13 + 0.45);
+      });
+    } catch {
+      // no gesture yet or audio unavailable — stay silent
+    }
+  }, []);
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 15000);
@@ -73,6 +101,7 @@ export function KitchenClient({
         },
         () => {
           toast.info("New order in");
+          chime();
           if (orderTimer) clearTimeout(orderTimer);
           orderTimer = setTimeout(refetchOrders, 300);
         }
@@ -110,7 +139,7 @@ export function KitchenClient({
       if (stockTimer) clearTimeout(stockTimer);
       supabase.removeChannel(channel);
     };
-  }, [restaurant.id, refetchOrders, refetchIngredients]);
+  }, [restaurant.id, refetchOrders, refetchIngredients, chime]);
 
   async function bump(order: OrderWithItems) {
     const next = order.status === "placed" ? "cooking" : "served";
@@ -140,6 +169,17 @@ export function KitchenClient({
             <Badge variant="outline">
               {orders.length} open order{orders.length === 1 ? "" : "s"}
             </Badge>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                soundRef.current = !soundRef.current;
+                setSoundOn(soundRef.current);
+                if (soundRef.current) chime();
+              }}
+            >
+              {soundOn ? "Sound on" : "Muted"}
+            </Button>
             <SignOutButton />
           </div>
         </div>
