@@ -398,7 +398,7 @@ export function OverviewClient({
           {events.length === 0 ? (
             <p className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground">
               Every stock movement lands here — orders depleting ingredients,
-              kitchen markdowns, restocks. Nothing is faked.
+              kitchen markdowns, restocks — a live audit trail.
             </p>
           ) : (
             <div className="space-y-1 overflow-hidden">

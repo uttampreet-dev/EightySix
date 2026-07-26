@@ -459,7 +459,7 @@ const PROOF = [
   { k: "30 min", v: "rolling velocity window behind every prediction" },
   { k: "min()", v: "availability = the scarcest ingredient in the recipe" },
   { k: "45 min", v: "warning before a dish dies, while you can still act" },
-  { k: "0", v: "numbers faked — everything computes from live rows" },
+  { k: "3", v: "surfaces — menu, kitchen, console — reading one live engine" },
 ];
 
 export function LandingClient() {
@@ -619,29 +619,69 @@ export function LandingClient() {
               One engine — ingredients → recipes → dishes — driving the diner
               menu, the kitchen, and the numbers. Live in the demo right now.
             </p>
-            <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-              <Button asChild size="lg">
-                <Link href="/r/demo">Open the live menu</Link>
-              </Button>
-              <DemoEntryButton role="owner" label="Enter as owner" />
+            <div className="mt-8 flex justify-center">
+              <DemoEntryButton role="owner" label="Open the owner console" variant="default" />
             </div>
           </Reveal>
         </section>
 
-        <footer className="border-t border-border/60">
-          <div className="mx-auto flex w-full max-w-6xl flex-col items-center justify-between gap-4 px-6 py-8 sm:flex-row">
-            <Brand className="text-base" />
-            <div className="flex items-center gap-6 font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-              <Link href="/r/demo" className="transition-colors hover:text-foreground">
-                Live menu
-              </Link>
-              <Link href="/login" className="transition-colors hover:text-foreground">
-                Staff sign in
-              </Link>
+        <footer className="border-t border-border/60 bg-white/1.5">
+          <div className="mx-auto w-full max-w-6xl px-6 py-12">
+            <div className="grid gap-10 sm:grid-cols-[1.4fr_1fr_1fr]">
+              <div>
+                <Brand className="text-lg" />
+                <p className="mt-3 max-w-xs text-sm leading-relaxed text-muted-foreground">
+                  The restaurant operating system that predicts stockouts from
+                  live order velocity — and acts before diners hit a dead end.
+                </p>
+                <div className="mt-4 flex items-center gap-2">
+                  <span className="relative flex h-2 w-2">
+                    <span className="absolute h-full w-full animate-ping rounded-full bg-green-500 opacity-60" />
+                    <span className="relative h-2 w-2 rounded-full bg-green-500" />
+                  </span>
+                  <span className="font-mono text-[11px] text-muted-foreground">
+                    Demo restaurant live now
+                  </span>
+                </div>
+              </div>
+              <div>
+                <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground/70">
+                  Product
+                </p>
+                <div className="flex flex-col gap-2 text-sm text-muted-foreground">
+                  <Link href="/r/demo" className="transition-colors hover:text-foreground">
+                    Diner menu
+                  </Link>
+                  <Link href="/kitchen" className="transition-colors hover:text-foreground">
+                    Kitchen board
+                  </Link>
+                  <Link href="/dashboard" className="transition-colors hover:text-foreground">
+                    Owner console
+                  </Link>
+                </div>
+              </div>
+              <div>
+                <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground/70">
+                  Access
+                </p>
+                <div className="flex flex-col gap-2 text-sm text-muted-foreground">
+                  <Link href="/login" className="transition-colors hover:text-foreground">
+                    Staff sign in
+                  </Link>
+                  <Link href="/signup" className="transition-colors hover:text-foreground">
+                    Create account
+                  </Link>
+                </div>
+              </div>
             </div>
-            <p className="font-mono text-[10px] text-muted-foreground/60">
-              NOTHING ON THIS SITE IS FAKED
-            </p>
+            <div className="mt-10 flex flex-col items-center justify-between gap-3 border-t border-border/60 pt-6 sm:flex-row">
+              <p className="font-mono text-[10px] text-muted-foreground/60">
+                © 2026 EIGHTYSIX
+              </p>
+              <p className="font-mono text-[10px] text-muted-foreground/60">
+                INGREDIENTS → RECIPES → DISHES · ONE SOURCE OF TRUTH
+              </p>
+            </div>
           </div>
         </footer>
       </main>
