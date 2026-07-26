@@ -41,11 +41,4 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# internal build docs — never push
-PRD.md
-BUILD_PLAN.md
-CLAUDE.md
-AGENTS.md
 
-# internal docs (never published)
-DEMO_SCRIPT.md
