@@ -5,6 +5,8 @@ import { toast } from "sonner";
 import { AnimatePresence, motion } from "motion/react";
 import { createClient } from "@/lib/supabase/client";
 import {
+  formatDate,
+  formatDateTime,
   getReservations,
   type Reservation,
   type Restaurant,
@@ -115,13 +117,7 @@ export function ReservationsClient({
                     </span>
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {new Date(reservation.reserved_at).toLocaleString("en-IN", {
-                      weekday: "short",
-                      day: "numeric",
-                      month: "short",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}{" "}
+                    {formatDateTime(reservation.reserved_at)}{" "}
                     · party of {reservation.party_size}
                     {reservation.note && ` · "${reservation.note}"`}
                   </p>
@@ -197,10 +193,7 @@ export function ReservationsClient({
               >
                 <span className="flex-1 truncate">
                   {reservation.name} · party of {reservation.party_size} ·{" "}
-                  {new Date(reservation.reserved_at).toLocaleDateString("en-IN", {
-                    day: "numeric",
-                    month: "short",
-                  })}
+                  {formatDate(reservation.reserved_at)}
                 </span>
                 <Badge variant="outline" className={`font-mono ${STATUS_TONE[reservation.status]}`}>
                   {reservation.status}

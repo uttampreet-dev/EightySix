@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getOwnerContext } from "@/lib/owner";
-import { formatINR, GST_RATE, type TodayOrder } from "@/lib/engine";
+import { formatDateTime, formatINR, GST_RATE, type TodayOrder } from "@/lib/engine";
 import { Button } from "@/components/ui/button";
 import { PrintButton } from "@/components/print-button";
 import { MarkPaidButton } from "./mark-paid-button";
@@ -61,12 +61,7 @@ export default async function BillPage({
           )}
           <p className="mt-2 text-[11px] text-[#1c1a15]/60">
             Table {order.tables?.label ?? "—"} ·{" "}
-            {new Date(order.created_at).toLocaleString("en-IN", {
-              day: "2-digit",
-              month: "short",
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
+            {formatDateTime(order.created_at)}
           </p>
           <p className="text-[11px] text-[#1c1a15]/60">
             Bill #{order.id.slice(0, 8).toUpperCase()}

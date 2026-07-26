@@ -7,6 +7,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { createClient } from "@/lib/supabase/client";
 import {
   formatINR,
+  formatTime,
   getTodayOrders,
   orderTotal,
   type OrderStatus,
@@ -122,10 +123,7 @@ export function OrdersClient({
                             <CardTitle className="flex items-center justify-between text-sm">
                               <span>Table {order.tables?.label ?? "—"}</span>
                               <span className="font-mono text-xs text-muted-foreground">
-                                {new Date(order.created_at).toLocaleTimeString("en-IN", {
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })}
+                                {formatTime(order.created_at)}
                               </span>
                             </CardTitle>
                           </CardHeader>

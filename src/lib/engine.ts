@@ -312,6 +312,36 @@ export function formatINR(n: number): string {
   return `₹${Math.round(n).toLocaleString("en-IN")}`;
 }
 
+// All human-readable dates pin to IST so server-rendered HTML (UTC boxes)
+// matches client hydration exactly.
+export const TIMEZONE = "Asia/Kolkata";
+
+export function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: TIMEZONE,
+  });
+}
+
+export function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    timeZone: TIMEZONE,
+  });
+}
+
+export function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString("en-IN", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: TIMEZONE,
+  });
+}
+
 export type DishRisk = DishAvailability & {
   velocity_30min: number;
   minutes_to_86: number | null;

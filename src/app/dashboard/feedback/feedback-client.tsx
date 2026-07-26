@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { AnimatePresence, motion } from "motion/react";
 import { createClient } from "@/lib/supabase/client";
-import { getFeedback, type Feedback, type Restaurant } from "@/lib/engine";
+import { formatDateTime, getFeedback, type Feedback, type Restaurant } from "@/lib/engine";
 import { getFeedbackSummary } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -167,12 +167,7 @@ export function FeedbackClient({
                   <div className="flex items-center justify-between gap-3">
                     <Stars rating={f.rating} />
                     <span className="font-mono text-[11px] text-muted-foreground">
-                      {new Date(f.created_at).toLocaleString("en-IN", {
-                        day: "numeric",
-                        month: "short",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
+                      {formatDateTime(f.created_at)}
                     </span>
                   </div>
                   {f.comment && (

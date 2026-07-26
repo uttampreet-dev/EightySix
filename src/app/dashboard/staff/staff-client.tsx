@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { createStaff } from "@/app/actions";
+import { formatDate, formatDateTime } from "@/lib/engine";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -152,19 +153,11 @@ export function StaffClient({ staff }: { staff: StaffMember[] }) {
                   </Badge>
                 </TableCell>
                 <TableCell className="text-muted-foreground">
-                  {new Date(member.created_at).toLocaleDateString("en-IN", {
-                    day: "numeric",
-                    month: "short",
-                  })}
+                  {formatDate(member.created_at)}
                 </TableCell>
                 <TableCell className="text-muted-foreground">
                   {member.lastSignIn
-                    ? new Date(member.lastSignIn).toLocaleString("en-IN", {
-                        day: "numeric",
-                        month: "short",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })
+                    ? formatDateTime(member.lastSignIn)
                     : "Never"}
                 </TableCell>
               </TableRow>

@@ -16,6 +16,7 @@ function tomorrowLabel(): string {
     weekday: "long",
     day: "numeric",
     month: "long",
+    timeZone: "Asia/Kolkata",
   });
 }
 

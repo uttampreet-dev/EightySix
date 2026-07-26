@@ -10,6 +10,7 @@ import {
   computeDayStats,
   formatEta,
   formatINR,
+  formatTime,
   getDishRisk,
   getIngredients,
   getRecentEvents,
@@ -424,10 +425,7 @@ export function OverviewClient({
                         }`}
                       />
                       <span className="text-muted-foreground">
-                        {new Date(event.created_at).toLocaleTimeString("en-IN", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
+                        {formatTime(event.created_at)}
                       </span>
                       <span className="truncate">
                         {event.ingredients?.name ?? "—"}{" "}
