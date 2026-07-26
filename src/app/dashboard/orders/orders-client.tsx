@@ -14,6 +14,7 @@ import {
   type TodayOrder,
 } from "@/lib/engine";
 import { bumpOrderStatus } from "@/app/actions";
+import { ORDER_STATUS_BADGE, ORDER_STATUS_DOT } from "@/lib/status-colors";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -71,9 +72,19 @@ export function OrdersClient({
 
   return (
     <div className="mx-auto w-full max-w-6xl">
-      <div className="mt-6 flex items-center justify-between">
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="font-serif text-2xl font-medium tracking-tight">Orders</h1>
-        <Badge variant="outline">{orders.length} today</Badge>
+        <div className="flex flex-wrap gap-1.5">
+          {columns.map((column) => (
+            <Badge
+              key={column.status}
+              variant="outline"
+              className={`font-mono ${ORDER_STATUS_BADGE[column.status]}`}
+            >
+              {orders.filter((o) => o.status === column.status).length} {column.status}
+            </Badge>
+          ))}
+        </div>
       </div>
 
       {orders.length === 0 ? (
@@ -91,7 +102,8 @@ export function OrdersClient({
             const columnOrders = orders.filter((o) => o.status === column.status);
             return (
               <div key={column.status} className="min-w-0">
-                <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                <p className="mb-2 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                  <span className={`h-1.5 w-1.5 rounded-full ${ORDER_STATUS_DOT[column.status]}`} />
                   {column.label} · {columnOrders.length}
                 </p>
                 <div className="space-y-2.5">

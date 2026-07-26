@@ -23,6 +23,7 @@ import {
   type TodayOrder,
 } from "@/lib/engine";
 import { getMorningBrief } from "@/app/actions";
+import { ChefHat, IndianRupee, Package, ReceiptText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,17 +34,26 @@ function StatCard({
   label,
   value,
   hint,
+  icon: Icon,
+  tint,
 }: {
   label: string;
   value: React.ReactNode;
   hint?: string;
+  icon: React.ComponentType<{ className?: string }>;
+  tint: string;
 }) {
   return (
     <Card className="gap-2 py-4">
       <CardHeader className="px-4">
-        <CardTitle className="font-mono text-[10px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
-          {label}
-        </CardTitle>
+        <div className="flex items-center gap-2">
+          <span className={`flex h-6 w-6 items-center justify-center rounded-md ${tint}`}>
+            <Icon className="h-3.5 w-3.5" />
+          </span>
+          <CardTitle className="font-mono text-[10px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
+            {label}
+          </CardTitle>
+        </div>
       </CardHeader>
       <CardContent className="px-4">
         <p className="font-serif text-[26px] font-medium leading-none tabular-nums">
@@ -218,15 +228,21 @@ export function OverviewClient({
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <StatCard
           label="Revenue today"
+          icon={IndianRupee}
+          tint="bg-brass/15 text-brass"
           value={<NumberTicker value={stats.revenue} format={formatINR} />}
         />
         <StatCard
           label="Orders today"
+          icon={ReceiptText}
+          tint="bg-[#3987e5]/15 text-[#6aa5ec]"
           value={<NumberTicker value={stats.orderCount} />}
           hint={`${orders.filter((o) => o.status === "placed" || o.status === "cooking").length} in progress`}
         />
         <StatCard
           label="Top dish"
+          icon={ChefHat}
+          tint="bg-green-500/15 text-green-500"
           value={
             <span className="text-xl leading-tight">
               {stats.topDishes[0]?.name ?? "—"}
@@ -236,6 +252,8 @@ export function OverviewClient({
         />
         <StatCard
           label="Low / out stock"
+          icon={Package}
+          tint="bg-amber-500/15 text-amber-400"
           value={<NumberTicker value={lowCount} />}
           hint={`of ${ingredients.length} ingredients`}
         />

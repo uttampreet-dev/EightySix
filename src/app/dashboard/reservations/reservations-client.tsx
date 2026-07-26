@@ -21,12 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-const STATUS_TONE: Record<Reservation["status"], string> = {
-  booked: "border-brass/40 text-brass",
-  seated: "border-green-800/60 text-green-500",
-  completed: "text-muted-foreground",
-  cancelled: "text-muted-foreground line-through",
-};
+import { RESERVATION_STATUS_BADGE as STATUS_TONE } from "@/lib/status-colors";
 
 export function ReservationsClient({
   restaurant,

@@ -531,10 +531,10 @@ export function LandingClient() {
               className="animate-fade-up mt-8 flex flex-wrap items-center gap-3"
               style={{ animationDelay: "270ms" }}
             >
-              <Button asChild size="lg">
-                <Link href="/r/demo">Open the live menu</Link>
+              <DemoEntryButton role="owner" label="Open the owner console" variant="default" />
+              <Button asChild size="lg" variant="outline">
+                <Link href="/r/demo">Live diner menu</Link>
               </Button>
-              <DemoEntryButton role="owner" label="Enter as owner" />
               <DemoEntryButton role="kitchen" label="Enter as kitchen" />
             </div>
             <p

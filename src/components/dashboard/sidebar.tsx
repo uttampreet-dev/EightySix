@@ -2,38 +2,53 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import {
+  BarChart3,
+  CalendarClock,
+  ChefHat,
+  ClipboardList,
+  Gauge,
+  LayoutGrid,
+  MessageSquareHeart,
+  Package,
+  QrCode,
+  ReceiptText,
+  Users,
+} from "lucide-react";
 import { Brand } from "@/components/brand";
 
-const SECTIONS: { label: string; items: { href: string; label: string }[] }[] = [
+type NavItem = { href: string; label: string; icon: React.ComponentType<{ className?: string }> };
+
+const SECTIONS: { label: string; items: NavItem[] }[] = [
   {
     label: "Operate",
     items: [
-      { href: "/dashboard", label: "Overview" },
-      { href: "/dashboard/orders", label: "Orders" },
-      { href: "/dashboard/reservations", label: "Reservations" },
-      { href: "/dashboard/tables", label: "Tables" },
+      { href: "/dashboard", label: "Overview", icon: Gauge },
+      { href: "/dashboard/orders", label: "Orders", icon: ReceiptText },
+      { href: "/dashboard/reservations", label: "Reservations", icon: CalendarClock },
+      { href: "/dashboard/tables", label: "Tables", icon: LayoutGrid },
     ],
   },
   {
     label: "Stock",
     items: [
-      { href: "/dashboard/inventory", label: "Inventory" },
-      { href: "/dashboard/menu", label: "Menu" },
-      { href: "/dashboard/prep", label: "Prep sheet" },
+      { href: "/dashboard/inventory", label: "Inventory", icon: Package },
+      { href: "/dashboard/menu", label: "Menu", icon: ChefHat },
+      { href: "/dashboard/prep", label: "Prep sheet", icon: ClipboardList },
     ],
   },
   {
     label: "Insight",
     items: [
-      { href: "/dashboard/analytics", label: "Analytics" },
-      { href: "/dashboard/feedback", label: "Feedback" },
+      { href: "/dashboard/analytics", label: "Analytics", icon: BarChart3 },
+      { href: "/dashboard/feedback", label: "Feedback", icon: MessageSquareHeart },
     ],
   },
   {
     label: "Admin",
     items: [
-      { href: "/dashboard/staff", label: "Staff" },
-      { href: "/dashboard/qr", label: "Table QRs" },
+      { href: "/dashboard/staff", label: "Staff", icon: Users },
+      { href: "/dashboard/qr", label: "Table QRs", icon: QrCode },
     ],
   },
 ];
@@ -56,16 +71,18 @@ export function DashboardSidebar() {
                   item.href === "/dashboard"
                     ? pathname === "/dashboard"
                     : pathname.startsWith(item.href);
+                const Icon = item.icon;
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`rounded-md px-2 py-1.5 text-sm transition-colors ${
+                    className={`flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors ${
                       active
                         ? "bg-secondary font-medium text-foreground"
                         : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
                     }`}
                   >
+                    <Icon className={`h-4 w-4 shrink-0 ${active ? "text-brass" : "text-muted-foreground/70"}`} />
                     {item.label}
                   </Link>
                 );

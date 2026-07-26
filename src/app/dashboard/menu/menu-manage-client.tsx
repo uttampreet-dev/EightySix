@@ -14,6 +14,7 @@ import {
   type Restaurant,
 } from "@/lib/engine";
 import { setDishActive, upsertDish } from "@/app/actions";
+import { CATEGORY_TINT } from "@/lib/status-colors";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -381,7 +382,14 @@ export function MenuManageClient({
                       {dish.name}
                     </span>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{dish.category}</TableCell>
+                  <TableCell>
+                    <Badge
+                      variant="outline"
+                      className={`font-normal ${CATEGORY_TINT[dish.category] ?? "text-muted-foreground"}`}
+                    >
+                      {dish.category}
+                    </Badge>
+                  </TableCell>
                   <TableCell className="tabular-nums text-muted-foreground">
                     {formatINR(dish.price)}
                   </TableCell>

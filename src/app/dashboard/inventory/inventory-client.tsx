@@ -286,14 +286,25 @@ export function InventoryClient({
 
   return (
     <div className="mx-auto w-full max-w-5xl">
-      <div className="mt-6 flex items-center justify-between">
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="font-serif text-2xl font-medium tracking-tight">Inventory</h1>
           <p className="text-xs text-muted-foreground">
-            {ingredients.length} ingredients · {lowCount} at or below reorder level
+            Stock edits flow through the event ledger
           </p>
         </div>
-        <AddIngredientDialog restaurantId={restaurant.id} onCreated={refetch} />
+        <div className="flex items-center gap-1.5">
+          <Badge variant="outline" className="border-green-800/60 bg-green-950/30 font-mono text-green-500">
+            {ingredients.length - lowCount} ok
+          </Badge>
+          <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 font-mono text-amber-400">
+            {ingredients.filter((i) => Number(i.stock_qty) > 0 && Number(i.stock_qty) <= Number(i.reorder_level)).length} low
+          </Badge>
+          <Badge variant="outline" className="border-red-900/60 bg-red-950/30 font-mono text-red-400">
+            {ingredients.filter((i) => Number(i.stock_qty) <= 0).length} out
+          </Badge>
+          <AddIngredientDialog restaurantId={restaurant.id} onCreated={refetch} />
+        </div>
       </div>
 
       <div className="mt-6 rounded-lg border">

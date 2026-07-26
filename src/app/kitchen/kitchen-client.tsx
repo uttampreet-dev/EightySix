@@ -12,6 +12,7 @@ import {
   type Restaurant,
 } from "@/lib/engine";
 import { adjustStock, bumpOrderStatus } from "@/app/actions";
+import { ORDER_STATUS_BADGE } from "@/lib/status-colors";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
@@ -220,7 +221,8 @@ export function KitchenClient({
                     </span>
                     <div className="flex items-center gap-2">
                       <Badge
-                        variant={order.status === "placed" ? "default" : "secondary"}
+                        variant="outline"
+                        className={`font-mono ${ORDER_STATUS_BADGE[order.status]}`}
                       >
                         {order.status}
                       </Badge>

@@ -24,6 +24,7 @@ import {
 } from "@/app/actions";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ORDER_STATUS_BADGE } from "@/lib/status-colors";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -393,10 +394,8 @@ export function MenuClient({
                 </span>
               </p>
               <Badge
-                variant={order.status === "placed" ? "outline" : "secondary"}
-                className={`shrink-0 font-mono ${
-                  order.status === "served" ? "text-green-500" : ""
-                }`}
+                variant="outline"
+                className={`shrink-0 font-mono ${ORDER_STATUS_BADGE[order.status]}`}
               >
                 {order.status}
               </Badge>
