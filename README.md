@@ -68,17 +68,13 @@ flowchart LR
 ### How a single order changes everything
 
 ```mermaid
-flowchart TD
-    A["Diner orders Butter Paneer ×2"] --> B["order_items INSERT"]
-    B -->|trigger| C["stock_events ledger<br/>−0.4kg paneer · −0.06kg butter · −0.1L cream …<br/>(one event per recipe ingredient)"]
-    C -->|trigger| D["ingredients.stock_qty updated"]
-    D --> E["dish_availability view<br/>portions_left = floor(min(stock ÷ qty_per_portion))<br/>— a dish is as available as its scarcest ingredient"]
-    E --> F["dish_risk view<br/>velocity = portions sold in trailing 30 min<br/>minutes_to_86 = portions_left × 30 ÷ velocity"]
-    F --> G{"minutes_to_86<br/>≤ 45?"}
-    G -->|yes| H["🔴 Radar alert: 'Butter Paneer dies in ~34 min'<br/>status banner flips · toast fires"]
-    E --> I{"portions_left = 0?"}
-    I -->|yes| J["⚡ INTERVENTIONS<br/>struck off every menu in the same second<br/>diner offered AI swap from live stock<br/>cause shown: 'kitchen ran out of paneer'"]
-    C --> K["prep_sheet()<br/>usage history by day-of-week →<br/>tomorrow's per-station kg + purchase order"]
+flowchart LR
+    A["🍛 Order placed<br/>Butter Paneer ×2"] -->|trigger| B["stock_events ledger<br/>one depletion event<br/>per recipe ingredient"]
+    B -->|trigger| C["dish_availability<br/>floor(min(stock ÷<br/>qty_per_portion))"]
+    C --> D["dish_risk<br/>ETA = portions × 30<br/>÷ 30-min velocity"]
+    D --> E["🔴 Radar alert<br/>'86 in ~34 min'"]
+    C --> F["⚡ Dish dies: struck from<br/>every menu · AI swap<br/>offered from live stock"]
+    B --> G["prep_sheet()<br/>tomorrow's kg +<br/>purchase order"]
 ```
 
 ## Core engine components
@@ -104,7 +100,7 @@ Every number on screen derives from these rows — no mock data, no hardcoded co
 
 **Demo experience** — one-click role entry · Simulate Dinner Rush · self-resetting seed restaurant · diner ratings · printable QRs, receipts and prep sheets
 
-## User stories (Vibeathon tiers)
+## User stories
 
 | Tier | Delivered |
 |---|---|
@@ -113,21 +109,6 @@ Every number on screen derives from these rows — no mock data, no hardcoded co
 | 🥇 Gold | Orders, tables, inventory, sales and analytics — all live views of one engine |
 | 💎 Platinum | Predictive 86ing · risk radar · AI swaps + briefs · prep-sheet + purchase-order generation |
 | ⭐ Bonus | **Simulate Dinner Rush** — the whole system visibly reacts across three screens |
-
-## Project structure
-
-```
-src/
-  app/
-    r/[slug]/        diner menu (QR entry, cart, tracking, swaps, ratings)
-    kitchen/         kitchen board (queue, chime, 86 board)
-    dashboard/       owner console (9 sections + bill/prep/qr pages)
-    actions.ts       all writes — server actions using the service role
-  lib/
-    engine.ts        availability/velocity semantics, fetchers, analytics
-    gemini.ts        grounded AI helpers
-supabase/migrations/ the engine: schema, triggers, views, RLS, seed (001 → 005)
-```
 
 ## Engineering highlights
 
@@ -158,8 +139,6 @@ npm run dev
 
 Run `supabase/migrations/` 001 → 005 in the Supabase SQL editor, in order. `001` creates the schema, engine and demo seed; `005` adds reservations + feedback.
 
-## Built for
+---
 
-**Vibeathon 6.0** · PS: Smart Restaurant Management System · built solo by **Uttampreet**
-
-Next.js 16 · Tailwind v4 + shadcn/ui · Supabase (Postgres, Auth, Realtime, RLS) · Gemini · Vercel
+*Next.js 16 · Tailwind v4 + shadcn/ui · Supabase · Gemini · Vercel — one engine, three surfaces, a menu that can't lie.*
