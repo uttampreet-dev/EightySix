@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { motion } from "motion/react";
+import { dishImage } from "@/lib/dish-image";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -52,6 +54,42 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Toaster } from "@/components/ui/sonner";
+
+function DishThumb({
+  name,
+  img,
+  out,
+}: {
+  name: string;
+  img: string | null;
+  out: boolean;
+}) {
+  const src = dishImage({ name, img });
+  if (!src) {
+    return (
+      <div className="flex h-19 w-19 shrink-0 items-center justify-center rounded-md border border-border/60 bg-white/1.5">
+        <span className="font-serif text-2xl text-brass/50">{name.charAt(0)}</span>
+      </div>
+    );
+  }
+  return (
+    <div className="relative h-19 w-19 shrink-0 overflow-hidden rounded-md border border-border/60">
+      <Image
+        src={src}
+        alt={name}
+        fill
+        sizes="76px"
+        className="object-cover"
+        unoptimized
+      />
+      {out && (
+        <span className="absolute inset-0 flex items-center justify-center bg-background/55 font-mono text-[10px] tracking-wider text-red-400">
+          86&apos;D
+        </span>
+      )}
+    </div>
+  );
+}
 
 function VegMark({ veg }: { veg: boolean }) {
   return (
@@ -533,12 +571,15 @@ export function MenuClient({
               return (
                 <div
                   key={dish.id}
-                  className={`rounded-lg border bg-card p-4 transition-all duration-700 ${
+                  className={`flex gap-3.5 rounded-lg border bg-card p-3 transition-all duration-700 ${
                     out
-                      ? "opacity-45 saturate-0"
+                      ? "opacity-50 saturate-0"
                       : "hover:border-brass/25 hover:shadow-[0_2px_16px_-8px_oklch(0.8_0.1_84/0.25)]"
                   }`}
                 >
+                  <DishThumb name={dish.name} img={dish.img} out={out} />
+
+                  <div className="flex min-w-0 flex-1 flex-col justify-between">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <VegMark veg={dish.veg} />
@@ -619,6 +660,7 @@ export function MenuClient({
                           </Button>
                         </div>
                       ))}
+                  </div>
                   </div>
                 </div>
               );
