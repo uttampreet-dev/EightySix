@@ -19,6 +19,7 @@ When an ingredient dies mid-service, the kitchen finds out first, waiters find o
 - **Predictive 86ing** — every dish gets a live *time of death*: `portions_left ÷ order velocity`. The manager is warned while there's still time to act.
 - **A recipe graph, not a toggle** — availability is *derived*: a dish is as available as its scarcest ingredient. Edit a recipe quantity and portions-left recomputes everywhere, live.
 - **Three surfaces, one truth** — diner menu, kitchen board, and owner console react to the same row change in the same second. No polling anywhere.
+- **Interventions are computed, not suggested** — one tap on a dying dish restocks the exact quantity the recipe graph says covers the next two hours; the service planner answers "150 diners tonight?" with arithmetic, not a confidence score.
 - **AI with guardrails** — Gemini suggests swaps and writes briefs, but only from engine data; its picks are validated against live stock before display.
 - **A demo that proves it** — the Dinner Rush floods the system through the *real* order path, so judges watch the whole machine react, live.
 
@@ -27,8 +28,9 @@ When an ingredient dies mid-service, the kitchen finds out first, waiters find o
 1. **Open** the [live demo](https://eightysix-two.vercel.app) → **Open the owner console** (one-click login).
 2. **Second tab:** the diner menu at `/r/demo` — no login, like scanning a table QR.
 3. **Press "Simulate dinner rush."** Watch, in order: kitchen fills (with sound) → menu badges count down → status banner flips green → amber → red → the **86-risk radar** predicts each dish's death → a dish dies and is struck through on the diner menu *in the same second*.
-4. **Tap the dead dish** on the menu → the AI names the ingredient that ran out and offers the closest available swap.
-5. **Reset demo** restores the seed state anytime.
+4. **Press "Prep"** on a dying radar row — the engine computes the exact restock (e.g. *"+0.5 kg urad dal — covers ~2h at current pace"*) and executes it. Or try **"Plan a service"** to see what 150 diners would do to tonight's stock.
+5. **Tap the dead dish** on the menu → the AI names the ingredient that ran out and offers the closest available swap.
+6. **Reset demo** restores the seed state anytime.
 
 Demo credentials (behind the one-click buttons): `owner@eightysix.demo` / `eightysix-owner-demo` · `kitchen@eightysix.demo` / `eightysix-kitchen-demo`
 
@@ -92,9 +94,9 @@ Every number on screen derives from these rows — no mock data, no hardcoded co
 
 ## Key features
 
-**Prediction engine** — live per-dish availability · 86-risk radar with time-of-death · 45-min alerts · restaurant status banner · prep-sheet forecaster + purchase order
+**Prediction engine** — live per-dish availability · 86-risk radar with time-of-death · 45-min alerts · one-tap radar interventions (restock quantity *computed* from the recipe graph to cover ~2h at current pace) · **service planner**: a deterministic what-if — "150 diners tonight?" → exactly which dishes die at which cover, a priced buy list, projected vs lost revenue · restaurant status banner · prep-sheet forecaster + purchase order
 
-**Restaurant operations** — QR table entry · cart + live order tracking · kitchen queue with chime + one-tap stock board · orders board → GST billing · ledger-audited inventory · menu CRUD with live recipe editor · reservations (book → seat → complete) · tables · staff accounts · 7-day analytics
+**Restaurant operations** — QR table entry · cart + live order tracking · kitchen queue with chime + one-tap stock board · orders board → GST billing · ledger-audited inventory · menu CRUD with live recipe editor · reservations (book → seat → complete) · tables · staff accounts · 7-day analytics with CSV export
 
 **AI features** — dead-dish swap suggestions (with the real cause: *"kitchen ran out of paneer"*) · manager brief · chef's prep notes · feedback theme summaries
 
@@ -116,6 +118,8 @@ Every number on screen derives from these rows — no mock data, no hardcoded co
 - **SQL-first engine** — availability, velocity and forecasting live in Postgres views/functions; the UI can't disagree with the database.
 - **Zero polling** — every screen subscribes to Supabase Realtime; one row change fans out to three surfaces.
 - **Writes behind server actions** — anon clients are read-only by RLS; every mutation crosses the server with the service role.
+- **Server-trusted money** — prices, totals and GST always come from database rows on the server; nothing financial is accepted from the client.
+- **Defense in depth** — role-guarded routing (`proxy.ts`) + per-request auth checks + row-level security at the database, with orders re-validated against live availability at placement time.
 - **Deterministic status** — the red/amber/green banner is computed from the radar, never generated.
 
 ## Technical challenges solved
@@ -128,6 +132,8 @@ Every number on screen derives from these rows — no mock data, no hardcoded co
 ## AI with guardrails
 
 AI never invents data here — **SQL is always the source of truth.** Gemini is prompted only with engine output (live availability, real ratings, real usage history), its swap picks are validated against current stock before display, and every AI feature has a non-AI fallback. In development: built with AI-assisted coding (Claude Code), with every feature verified against the live database via scripted end-to-end checks.
+
+> Dish photography sourced from [Wikimedia Commons](https://commons.wikimedia.org) (Creative Commons licenses).
 
 ## Running locally
 
