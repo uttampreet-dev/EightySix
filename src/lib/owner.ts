@@ -17,23 +17,16 @@ export async function getOwnerContext(next = "/dashboard"): Promise<OwnerContext
   } = await supabase.auth.getUser();
   if (!user) redirect(`/login?next=${encodeURIComponent(next)}`);
 
+  // one round trip: role + restaurant together (pages call this on every load)
   const { data: profile } = await supabase
     .from("profiles")
-    .select("restaurant_id, role")
+    .select("role, restaurants(id, name, slug, tagline)")
     .eq("id", user.id)
-    .maybeSingle();
+    .maybeSingle<{ role: string; restaurants: Restaurant | null }>();
   if (profile?.role === "kitchen") redirect("/kitchen");
   if (profile?.role === "waiter") redirect("/waiter");
 
-  let restaurant: Restaurant | null = null;
-  if (profile?.restaurant_id) {
-    const { data } = await supabase
-      .from("restaurants")
-      .select("id, name, slug, tagline")
-      .eq("id", profile.restaurant_id)
-      .maybeSingle();
-    restaurant = data;
-  }
+  let restaurant: Restaurant | null = profile?.restaurants ?? null;
   if (!restaurant) restaurant = await getRestaurantBySlug(supabase, "demo");
   if (!restaurant) redirect("/");
 

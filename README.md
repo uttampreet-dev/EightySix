@@ -261,7 +261,7 @@ eightysix/
 │   │   ├── demo.ts                # One-click evaluator accounts
 │   │   └── supabase/              # Browser / server / admin (service-role) clients
 │   └── proxy.ts                   # Session refresh + route guards
-├── supabase/migrations/           # ⚙️ THE ENGINE — 001 → 007, pure SQL
+├── supabase/migrations/           # ⚙️ THE ENGINE — 001 → 008, pure SQL
 ├── scripts/                       # Demo-account bootstrap (idempotent)
 ├── screenshots/                   # README screenshots
 ├── docs/                          # 📚 Deep-dive documentation
@@ -321,7 +321,7 @@ cp .env.example .env.local   # Supabase URL, anon key, service-role key, Gemini 
 npm run dev
 ```
 
-Run `supabase/migrations/` **001 → 007** in the Supabase SQL editor, in order. `001` creates the schema, engine and demo seed; `005` adds reservations + feedback; `006` adds the waiter role, service calls, chef's specials and price snapshots; `007` seeds a week of order history on every reset. Then `node scripts/bootstrap-demo-accounts.mjs` creates the three one-click demo accounts.
+Run `supabase/migrations/` **001 → 008** in the Supabase SQL editor, in order. `001` creates the schema, engine and demo seed; `005` adds reservations + feedback; `006` adds the waiter role, service calls, chef's specials and price snapshots; `007`–`008` seed a week of history, bookings and ratings on every reset. Then `node scripts/bootstrap-demo-accounts.mjs` creates the three one-click demo accounts.
 
 📖 Step-by-step provisioning + Vercel deployment: **[docs/SETUP.md](docs/SETUP.md)**
 

@@ -42,7 +42,7 @@ cp .env.example .env.local
 
 ## 4. Migrations & Run
 
-Open the **SQL Editor** in Supabase and run the seven files from [`supabase/migrations/`](../supabase/migrations/) **in order** — `001_init.sql` through `007_history.sql`. Each file is idempotent (safe to re-run); `001` seeds the demo restaurant (*Tandoor Tales*: 32 ingredients, 28 dishes, the full recipe graph, 10 tables); `006` adds the waiter role, service calls, chef's specials and unit-price snapshots; `007` makes every reset seed six days of order history so analytics and forecasts are populated. What each file creates: [ARCHITECTURE.md](ARCHITECTURE.md#the-engine--pure-sql).
+Open the **SQL Editor** in Supabase and run the eight files from [`supabase/migrations/`](../supabase/migrations/) **in order** — `001_init.sql` through `008_seed_extras.sql`. Each file is idempotent (safe to re-run); `001` seeds the demo restaurant (*Tandoor Tales*: 32 ingredients, 28 dishes, the full recipe graph, 10 tables); `006` adds the waiter role, service calls, chef's specials and unit-price snapshots; `007`–`008` make every reset seed a week of order history, today's lunch, bookings and diner ratings so analytics, forecasts and feedback are populated. What each file creates: [ARCHITECTURE.md](ARCHITECTURE.md#the-engine--pure-sql).
 
 Then create the three one-click demo accounts (idempotent, uses `.env.local`):
 
@@ -72,7 +72,7 @@ Three ways, all safe — `reset_demo()` keeps every ID stable, so logins, printe
 
 | Symptom | Fix |
 |---|---|
-| `demo restaurant missing — run 001_init.sql first` | Migrations ran out of order — run `001`, then 002–007 |
+| `demo restaurant missing — run 001_init.sql first` | Migrations ran out of order — run `001`, then 002–008 |
 | Screens don't update live | Realtime publication missing — re-run `001`, `005` and `006` (they add tables to `supabase_realtime`) |
 | Demo login buttons fail | Demo accounts not provisioned — run `node scripts/bootstrap-demo-accounts.mjs` |
 | OAuth/email link lands on `localhost` in prod | Add the production URL in Supabase Auth URL Configuration |
