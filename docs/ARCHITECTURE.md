@@ -76,7 +76,8 @@ The heart of the product lives in [`supabase/migrations/`](../supabase/migration
 | `003_intelligence.sql` | `dish_risk` view, `prep_sheet()` forecaster |
 | `004_reset.sql` | Stable-ID `reset_demo()` — clears history without killing logins/QRs/channels |
 | `005_hospitality.sql` | Reservations, feedback, updated `reset_demo()` |
-| `006_floor.sql` | Waiter role, `service_calls` (diner → floor pings), chef's specials (`regular_price` / `special_note` / `special_until` on dishes), `ingredient_surplus` view, `unit_price` snapshot trigger on `order_items`, radar edge-case fixes (`greatest(1, …)` ETA, `greatest(0, …)` portions), final `reset_demo()` |
+| `006_floor.sql` | Waiter role, `service_calls` (diner → floor pings), chef's specials (`regular_price` / `special_note` / `special_until` on dishes), `ingredient_surplus` view, `unit_price` snapshot trigger on `order_items`, radar edge-case fixes (`greatest(1, …)` ETA, `greatest(0, …)` portions) |
+| `007_history.sql` | `seed_order_history()` — every reset seeds ~35 paid orders across the prior six IST days (depletion triggers suspended, so live stock stays at seed values) — plus the final `reset_demo()` |
 
 ### The ledger and its triggers
 
