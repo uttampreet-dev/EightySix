@@ -18,6 +18,7 @@ Public, no login — exactly like scanning a table QR.
 
 - **Live availability badges** — real portions-left per dish from the `dish_availability` view; "low" styling at ≤ 5 portions; counts tick down as *anyone* orders.
 - **The strikethrough moment** — a dish hitting zero is struck through on every open menu in the same second: Eighty~~Six~~.
+- **The Expeditor** — a chat assistant that runs the pass: prompted only with the live menu (availability, specials, prices), its picks validated against current stock before display, each one a single tap from the cart. It can tell you what's sold out — it can never recommend it.
 - **AI swap on death** — tap a dead dish and Gemini names the real cause (*"kitchen ran out of paneer"*) and offers the closest available alternatives, validated against live stock.
 - **Cart + ordering** — category-organized menu, veg/non-veg markers, dish photography, ordering against a table.
 - **Live order tracking** — watch your order move `placed → cooking → served` as the kitchen bumps it; the *served* moment chimes and vibrates the phone.
