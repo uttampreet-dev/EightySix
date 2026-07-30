@@ -9,7 +9,7 @@ import { KitchenClient } from "./kitchen-client";
 
 export const dynamic = "force-dynamic";
 
-// Single-restaurant demo for now; Phase 2 auth scopes this by profile.
+// Single-restaurant demo for now; profiles scope this per restaurant.
 const DEMO_SLUG = "demo";
 
 export default async function KitchenPage() {
