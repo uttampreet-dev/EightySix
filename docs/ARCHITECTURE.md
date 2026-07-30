@@ -1,6 +1,6 @@
 # 🏗️ Architecture & The Engine
 
-EightySix is three live surfaces over one SQL engine. This is the technical deep dive: the shape of the system, the database that powers it, the security model, and the AI guardrails.
+EightySix is four live surfaces over one SQL engine. This is the technical deep dive: the shape of the system, the database that powers it, the security model, and the AI guardrails.
 
 <p align="center">
   <a href="#system-overview">System</a> •
@@ -15,38 +15,39 @@ EightySix is three live surfaces over one SQL engine. This is the technical deep
 
 ```mermaid
 flowchart LR
-    subgraph Screens["Three live surfaces"]
+    subgraph Screens["Four live surfaces"]
         DINER["📱 Diner menu<br/>/r/[slug] — no login"]
         KITCHEN["👨‍🍳 Kitchen board<br/>/kitchen — kitchen role"]
+        WAITER["🛎️ Waiter floor view<br/>/waiter — waiter role"]
         CONSOLE["🖥️ Owner console<br/>/dashboard — owner role"]
     end
 
     subgraph Next["Next.js 16 (Vercel)"]
-        SA["Server actions<br/>(service role — all writes)"]
+        SA["Server actions<br/>(service role writes + role guards)"]
         PROXY["proxy.ts<br/>session refresh + route guards"]
     end
 
     subgraph Supabase["Supabase (Postgres)"]
-        ENGINE["⚙️ THE ENGINE (pure SQL)<br/>stock_events ledger + triggers<br/>dish_availability · dish_risk<br/>prep_sheet()"]
+        ENGINE["⚙️ THE ENGINE (pure SQL)<br/>stock_events ledger + triggers<br/>dish_availability · dish_risk<br/>ingredient_surplus · service_calls<br/>prep_sheet()"]
         RT["Realtime (websockets)"]
-        AUTH["Auth — email + Google OAuth"]
+        AUTH["Auth — password · email OTP · Google"]
     end
 
     GEMINI["✨ Gemini"]
 
-    DINER & KITCHEN & CONSOLE --> SA
+    DINER & KITCHEN & WAITER & CONSOLE --> SA
     SA --> ENGINE
     SA --> GEMINI
     ENGINE --> RT
-    RT -.->|live push, no polling| DINER & KITCHEN & CONSOLE
+    RT -.->|live push, no polling| DINER & KITCHEN & WAITER & CONSOLE
     PROXY --> AUTH
 ```
 
 Three principles govern everything:
 
 1. **The database is the only truth.** Availability, risk, forecasts and money are computed in Postgres. The UI renders rows; it never re-derives them.
-2. **All writes cross the server.** Browser clients — anonymous diners *and* signed-in staff — are read-only by RLS. Every mutation is one of 19 server actions ([`src/app/actions.ts`](../src/app/actions.ts)) running with the service role.
-3. **Nothing polls.** Every surface subscribes to Supabase Realtime; a single row change fans out to all three screens over websockets in the same second. (One deliberate exception: risk decays with *time*, not just events, so the radar also recomputes on a clock tick.)
+2. **All writes cross the server.** Browser clients — anonymous diners *and* signed-in staff — are read-only by RLS. Every mutation is one of 24 server actions ([`src/app/actions.ts`](../src/app/actions.ts)) running with the service role.
+3. **Nothing polls.** Every surface subscribes to Supabase Realtime; a single row change fans out to all four screens over websockets in the same second. (One deliberate exception: risk decays with *time*, not just events, so the radar also recomputes on a clock tick.)
 
 The complete cascade for a single order — `placeOrder("Butter Paneer ×2")`:
 
@@ -74,7 +75,8 @@ The heart of the product lives in [`supabase/migrations/`](../supabase/migration
 | `002_auth.sql` | Profile-on-signup trigger, `my_restaurant_id()`, staff write policies |
 | `003_intelligence.sql` | `dish_risk` view, `prep_sheet()` forecaster |
 | `004_reset.sql` | Stable-ID `reset_demo()` — clears history without killing logins/QRs/channels |
-| `005_hospitality.sql` | Reservations, feedback, final `reset_demo()` |
+| `005_hospitality.sql` | Reservations, feedback, updated `reset_demo()` |
+| `006_floor.sql` | Waiter role, `service_calls` (diner → floor pings), chef's specials (`regular_price` / `special_note` / `special_until` on dishes), `ingredient_surplus` view, `unit_price` snapshot trigger on `order_items`, radar edge-case fixes (`greatest(1, …)` ETA, `greatest(0, …)` portions), final `reset_demo()` |
 
 ### The ledger and its triggers
 
@@ -89,14 +91,15 @@ Every stock change — an order, a manual 86-board tap, a prep restock — is an
   ```
 
 - **`trg_apply_stock_event`** (`AFTER INSERT ON stock_events`) — folds each event into `ingredients.stock_qty`, floored at zero.
-- **`on_auth_user_created`** — creates a `profiles` row at signup with the role from metadata (`owner`/`kitchen`; Google OAuth defaults to `owner`). The client never writes its own role.
+- **`on_auth_user_created`** — creates a `profiles` row at signup with the role from metadata (`owner`/`kitchen`/`waiter`; Google OAuth defaults to `owner`). The client never writes its own role.
+- **`trg_fill_order_item_price`** (`BEFORE INSERT ON order_items`) — freezes the dish's current price into `unit_price`, so bills and analytics total from what the diner actually saw, forever.
 
 ### The derived views
 
 Both run with `security_invoker = on` (the caller's RLS applies).
 
 - **`dish_availability`** — `portions_left = floor(min over recipe of (stock_qty ÷ qty_per_portion))`. A dish is exactly as available as its scarcest ingredient. No cache, no invalidation — a view can't be stale.
-- **`dish_risk`** — extends availability with `velocity_30min` (portions ordered in the trailing 30 minutes, from real timestamps) and the live time-of-death: `minutes_to_86 = round(portions_left × 30 ÷ velocity_30min)` (`0` = dead, `NULL` = no velocity, not dying). The UI layers thresholds on top ([`src/lib/engine.ts`](../src/lib/engine.ts)): alerts at ≤ 45 min, radar horizon 8 h, "low" badge at ≤ 5 portions.
+- **`dish_risk`** — extends availability with `velocity_30min` (portions ordered in the trailing 30 minutes, from real timestamps) and the live time-of-death: `minutes_to_86 = greatest(1, round(portions_left × 30 ÷ velocity_30min))` (`0` = dead, `NULL` = no velocity, not dying; the `greatest(1, …)` keeps a fast-selling last portion from collapsing onto the dead sentinel and vanishing off the radar at its most critical moment). The UI layers thresholds on top ([`src/lib/engine.ts`](../src/lib/engine.ts)): alerts at ≤ 45 min, radar horizon 8 h, "low" badge at ≤ 5 portions.
 
 ### The functions
 
@@ -122,6 +125,8 @@ erDiagram
     restaurants ||--o{ tables : ""
     restaurants ||--o{ orders : ""
     restaurants ||--o{ reservations : ""
+    restaurants ||--o{ service_calls : "floor pings"
+    tables ||--o{ service_calls : ""
     dishes ||--o{ recipe_items : "recipe"
     ingredients ||--o{ recipe_items : ""
     ingredients ||--o{ stock_events : "ledger"
@@ -134,16 +139,17 @@ erDiagram
 | Table | Key Columns | Notes |
 |---|---|---|
 | `restaurants` | `slug` (unique), `name`, `tagline` | Public menu URL is `/r/{slug}` |
-| `profiles` | `id` = `auth.users.id`, `role` | `owner` \| `kitchen`, CHECK-constrained, trigger-created |
+| `profiles` | `id` = `auth.users.id`, `role` | `owner` \| `kitchen` \| `waiter`, CHECK-constrained, trigger-created |
 | `ingredients` | `stock_qty`, `reorder_level`, `cost_per_unit`, `unit` | `stock_qty` is **never written by the app** — the ledger trigger owns it |
-| `dishes` | `price`, `category`, `veg`, `img`, `is_active` | `price` is the only price the server ever trusts |
+| `dishes` | `price`, `regular_price`, `special_note`, `special_until`, `category`, `veg`, `img`, `is_active` | `price` is the only price the server ever trusts; a running special *is* the price, with the original parked in `regular_price` — so no parallel price math exists anywhere |
 | `recipe_items` | `(dish_id, ingredient_id)` PK, `qty_per_portion > 0` | The recipe graph — the edge weight everything derives from |
 | `tables` | `label`, `seats`, `status` | `free` \| `occupied` |
 | `orders` | `table_id`, `status`, `created_at` | `placed → cooking → served → paid` |
-| `order_items` | `dish_id`, `qty > 0`, `status`, `created_at` | Inserting here fires the depletion trigger; timestamps feed velocity |
+| `order_items` | `dish_id`, `qty > 0`, `unit_price`, `status`, `created_at` | Inserting here fires the depletion trigger **and** freezes `unit_price` — bills and analytics can't be rewritten by later price changes; timestamps feed velocity |
 | `stock_events` | `delta` (signed), `reason`, `created_at` | The append-only ledger; `restaurant_id` backfilled by a BEFORE trigger |
 | `reservations` | `party_size` 1–20, `reserved_at`, `status` | `booked → seated → completed` \| `cancelled` |
 | `feedback` | `order_id` **UNIQUE**, `rating` 1–5 | One rating per order, enforced by the DB |
+| `service_calls` | `table_id`, `kind` (`waiter` \| `bill`), `status` (`open` \| `done`) | Diner → floor pings; deduped per table+kind server-side; realtime-published to the waiter board |
 
 Indexes back every hot path: orders/events by `(restaurant_id, created_at desc)`, order items by `(dish_id, created_at desc)` for the velocity window, the ledger by ingredient for the audit trail.
 
@@ -155,10 +161,11 @@ Defense in depth — four independent layers, shaped by one constraint: **diners
 
 | # | Layer | Where | Stops |
 |---|---|---|---|
-| 1 | Route guards + session refresh | [`src/proxy.ts`](../src/proxy.ts) | Unauthenticated navigation to `/dashboard/*`, `/kitchen/*` (server-verified `getUser()`, redirect with `?next=`) |
+| 1 | Route guards + session refresh | [`src/proxy.ts`](../src/proxy.ts) | Unauthenticated navigation to `/dashboard/*`, `/kitchen/*`, `/waiter/*` (server-verified `getUser()`, redirect with `?next=`) |
 | 2 | Per-request auth context | [`src/lib/owner.ts`](../src/lib/owner.ts) | A valid session on the wrong surface — pages re-verify role + restaurant before rendering |
-| 3 | Server-action write path | [`src/app/actions.ts`](../src/app/actions.ts) | Tampered prices, stale-menu orders, forged mutations |
-| 4 | Row Level Security | Postgres | Everything above failing — the database enforces the model itself |
+| 3 | Per-action role guards | [`src/lib/authz.ts`](../src/lib/authz.ts) | Direct invocation of operational server actions without a staff session — every mutating action resolves the caller's role and validates ownership of client-supplied IDs before the service role writes; order statuses are forward-only |
+| 4 | Server-action write path | [`src/app/actions.ts`](../src/app/actions.ts) | Tampered prices, stale-menu orders, forged mutations |
+| 5 | Row Level Security | Postgres | Everything above failing — the database enforces the model itself |
 
 **RLS on all 11 tables:** `public read` everywhere except `profiles` (own-row only); `staff update` scoped to `my_restaurant_id()`; `staff insert stock events` with `WITH CHECK` on the caller's restaurant. Notably **absent**: any anon `INSERT` policy — even if every app layer failed, an anonymous client could not write a row.
 
@@ -186,6 +193,9 @@ FALLBACK  Gemini down → a deterministic non-AI path still works
 | **Manager brief** (`getMorningBrief`) | Prompted with today's server-computed revenue, the at-risk list with real ETAs, dead dishes, and low ingredients. Gemini's job is strictly editorial: ≤ 4 terse, action-focused bullets. |
 | **Chef's prep notes** (prep page) | `prep_sheet()` produces every number; the AI only writes the narrative around them, and the sheet renders fine without it. |
 | **Feedback themes** (`getFeedbackSummary`) | Summarizes real ratings/comments; the raw feedback is always shown regardless. |
+| **Special pitches** (`runSpecial`) | The engine picks the dish and computes the price cut deterministically; Gemini only writes the one-line pitch from those facts. Fallback: a plain "₹X off today" line. |
+
+Every Gemini call is timeboxed at 8 seconds (`AbortSignal.timeout`) — a hung upstream fails fast into the deterministic fallback instead of stalling a server action.
 
 What the AI is **never** allowed to do: report a number the engine didn't compute, suggest a dish without a live-stock check, decide the status banner (deterministic, from the radar), or touch money.
 

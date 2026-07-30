@@ -42,13 +42,16 @@ cp .env.example .env.local
 
 ## 4. Migrations & Run
 
-Open the **SQL Editor** in Supabase and run the five files from [`supabase/migrations/`](../supabase/migrations/) **in order** — `001_init.sql` through `005_hospitality.sql`. Each file is idempotent (safe to re-run); `001` seeds the demo restaurant (*Tandoor Tales*: 32 ingredients, 28 dishes, the full recipe graph, 10 tables). What each file creates: [ARCHITECTURE.md](ARCHITECTURE.md#the-engine--pure-sql).
+Open the **SQL Editor** in Supabase and run the six files from [`supabase/migrations/`](../supabase/migrations/) **in order** — `001_init.sql` through `006_floor.sql`. Each file is idempotent (safe to re-run); `001` seeds the demo restaurant (*Tandoor Tales*: 32 ingredients, 28 dishes, the full recipe graph, 10 tables); `006` adds the waiter role, service calls, chef's specials and unit-price snapshots. What each file creates: [ARCHITECTURE.md](ARCHITECTURE.md#the-engine--pure-sql).
+
+Then create the three one-click demo accounts (idempotent, uses `.env.local`):
 
 ```bash
+node scripts/bootstrap-demo-accounts.mjs
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) — the diner menu is at [/r/demo](http://localhost:3000/r/demo), no login needed. Sign up at `/signup` choosing a role: **owner** lands on `/dashboard`, **kitchen** on `/kitchen` (profiles are created automatically by a DB trigger; Google sign-ins default to owner).
+Open [http://localhost:3000](http://localhost:3000) — the diner menu is at [/r/demo](http://localhost:3000/r/demo), no login needed. Sign up at `/signup` choosing a role: **owner** lands on `/dashboard`, **kitchen** on `/kitchen`, **waiter** on `/waiter` (profiles are created automatically by a DB trigger; Google sign-ins default to owner).
 
 ## Deploying to Vercel
 
@@ -69,8 +72,9 @@ Three ways, all safe — `reset_demo()` keeps every ID stable, so logins, printe
 
 | Symptom | Fix |
 |---|---|
-| `demo restaurant missing — run 001_init.sql first` | Migrations ran out of order — run `001`, then 002–005 |
-| Screens don't update live | Realtime publication missing — re-run `001` and `005` (they add tables to `supabase_realtime`) |
+| `demo restaurant missing — run 001_init.sql first` | Migrations ran out of order — run `001`, then 002–006 |
+| Screens don't update live | Realtime publication missing — re-run `001`, `005` and `006` (they add tables to `supabase_realtime`) |
+| Demo login buttons fail | Demo accounts not provisioned — run `node scripts/bootstrap-demo-accounts.mjs` |
 | OAuth/email link lands on `localhost` in prod | Add the production URL in Supabase Auth URL Configuration |
 | AI features show fallbacks | `GEMINI_API_KEY` missing or over quota — every AI feature degrades gracefully by design |
 | Writes fail from the browser | Expected — browsers are read-only by RLS; all writes go through server actions with the service-role key |
