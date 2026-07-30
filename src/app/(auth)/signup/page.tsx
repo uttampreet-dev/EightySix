@@ -24,13 +24,14 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { GoogleButton } from "@/components/google-button";
+import { AuthSessionNotice } from "@/components/auth-session-notice";
 
 export default function SignupPage() {
   const router = useRouter();
   const [step, setStep] = useState<"form" | "verify">("form");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<"owner" | "kitchen">("owner");
+  const [role, setRole] = useState<"owner" | "kitchen" | "waiter">("owner");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -98,6 +99,8 @@ export default function SignupPage() {
   }
 
   return (
+    <>
+    <AuthSessionNotice />
     <Card className="w-full max-w-sm">
       <CardHeader>
         <CardTitle>Create a staff account</CardTitle>
@@ -137,6 +140,7 @@ export default function SignupPage() {
               <SelectContent>
                 <SelectItem value="owner">Owner / Manager</SelectItem>
                 <SelectItem value="kitchen">Kitchen</SelectItem>
+                <SelectItem value="waiter">Waiter / Floor</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -161,5 +165,6 @@ export default function SignupPage() {
         </CardFooter>
       </form>
     </Card>
+    </>
   );
 }

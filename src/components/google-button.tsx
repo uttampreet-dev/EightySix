@@ -1,15 +1,17 @@
 "use client";
 
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 
 export function GoogleButton({ label }: { label: string }) {
   async function signInWithGoogle() {
     const supabase = createClient();
-    await supabase.auth.signInWithOAuth({
+    const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: { redirectTo: `${location.origin}/auth/callback` },
     });
+    if (error) toast.error("Google sign-in failed", { description: error.message });
   }
 
   return (
