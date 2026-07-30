@@ -22,8 +22,8 @@ export function MarkPaidButton({ orderId }: { orderId: string }) {
   }
 
   return (
-    <Button size="sm" disabled={busy} onClick={markPaid}>
-      {busy ? "Recording…" : "Mark paid"}
+    <Button size="sm" variant="outline" disabled={busy} onClick={markPaid}>
+      {busy ? "Recording…" : "Paid in cash"}
     </Button>
   );
 }

@@ -42,7 +42,7 @@ export function StaffClient({ staff }: { staff: StaffMember[] }) {
   const [form, setForm] = useState({
     email: "",
     password: "",
-    role: "kitchen" as "owner" | "kitchen",
+    role: "kitchen" as "owner" | "kitchen" | "waiter",
   });
 
   async function submit(e: React.FormEvent) {
@@ -68,7 +68,7 @@ export function StaffClient({ staff }: { staff: StaffMember[] }) {
         <div>
           <h1 className="font-serif text-2xl font-medium tracking-tight">Staff</h1>
           <p className="text-xs text-muted-foreground">
-            Owners see everything; kitchen accounts land on the kitchen board.
+            Owners see everything; kitchen accounts land on the kitchen board; waiters land on the floor view.
             Access is scoped by row-level security.
           </p>
         </div>
@@ -116,6 +116,7 @@ export function StaffClient({ staff }: { staff: StaffMember[] }) {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="kitchen">Kitchen</SelectItem>
+                    <SelectItem value="waiter">Waiter / Floor</SelectItem>
                     <SelectItem value="owner">Owner / Manager</SelectItem>
                   </SelectContent>
                 </Select>

@@ -411,7 +411,7 @@ export function MenuManageClient({
                       <Button
                         size="sm"
                         variant={dish.is_active ? "outline" : "secondary"}
-                        className={dish.is_active ? "text-red-400" : ""}
+                        className={dish.is_active ? "text-red-600 dark:text-red-400" : ""}
                         onClick={async () => {
                           const result = await setDishActive(dish.id, !dish.is_active);
                           if (!result.ok) toast.error(result.error);

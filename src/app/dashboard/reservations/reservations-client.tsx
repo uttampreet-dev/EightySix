@@ -155,7 +155,7 @@ export function ReservationsClient({
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="text-red-400"
+                      className="text-red-600 dark:text-red-400"
                       onClick={() =>
                         update(reservation, { status: "cancelled", tableId: reservation.table_id })
                       }

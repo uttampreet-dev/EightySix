@@ -14,17 +14,27 @@ import {
   getDishRisk,
   getIngredients,
   getRecentEvents,
+  getSurplus,
   getTodayOrders,
+  isSpecial,
   restaurantHealth,
   RISK_ALERT_MINUTES,
+  surplusIngredients,
   type DishRisk,
   type Ingredient,
   type LedgerEvent,
   type Restaurant,
+  type SurplusRow,
   type TodayOrder,
 } from "@/lib/engine";
-import { getMorningBrief, interveneOnDish, planService } from "@/app/actions";
-import { ChefHat, IndianRupee, Package, ReceiptText } from "lucide-react";
+import {
+  endSpecial,
+  getMorningBrief,
+  interveneOnDish,
+  planService,
+  runSpecial,
+} from "@/app/actions";
+import { ChefHat, IndianRupee, Package, ReceiptText, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -92,17 +102,20 @@ export function OverviewClient({
   initialIngredients,
   initialRisk,
   initialEvents,
+  initialSurplus,
 }: {
   restaurant: Restaurant;
   initialOrders: TodayOrder[];
   initialIngredients: Ingredient[];
   initialRisk: DishRisk[];
   initialEvents: LedgerEvent[];
+  initialSurplus: SurplusRow[];
 }) {
   const [orders, setOrders] = useState(initialOrders);
   const [ingredients, setIngredients] = useState(initialIngredients);
   const [risk, setRisk] = useState(initialRisk);
   const [events, setEvents] = useState(initialEvents);
+  const [surplus, setSurplus] = useState(initialSurplus);
   const [brief, setBrief] = useState<string | null>(null);
   const [briefLoading, setBriefLoading] = useState(false);
   const [plannerOpen, setPlannerOpen] = useState(false);
@@ -123,6 +136,25 @@ export function OverviewClient({
     refetchEvents();
   }
 
+  async function startSpecial(ingredientId: string) {
+    setActing(ingredientId + "special");
+    const result = await runSpecial(ingredientId);
+    setActing(null);
+    if (result.ok && result.data) toast.success(result.data.summary);
+    else if (!result.ok) toast.error(result.error);
+    refetchRisk();
+    refetchSurplus();
+  }
+
+  async function stopSpecial(dishId: string) {
+    setActing(dishId + "endspecial");
+    const result = await endSpecial(dishId);
+    setActing(null);
+    if (!result.ok) toast.error(result.error);
+    refetchRisk();
+    refetchSurplus();
+  }
+
   async function runPlanner() {
     setPlannerBusy(true);
     const result = await planService(restaurant.id, Number(plannerDiners));
@@ -139,6 +171,9 @@ export function OverviewClient({
   }, [restaurant.id]);
   const refetchEvents = useCallback(async () => {
     setEvents(await getRecentEvents(createClient(), restaurant.id));
+  }, [restaurant.id]);
+  const refetchSurplus = useCallback(async () => {
+    setSurplus(await getSurplus(createClient(), restaurant.id));
   }, [restaurant.id]);
   const refetchRisk = useCallback(async () => {
     const fresh = await getDishRisk(createClient(), restaurant.id);
@@ -183,6 +218,17 @@ export function OverviewClient({
         { event: "*", schema: "public", table: "orders", filter: `restaurant_id=eq.${restaurant.id}` },
         () => debounced("orders", refetchOrders)
       )
+      // reset_demo bulk-DELETEs orders/events; DELETE payloads don't carry
+      // the filter column, so these bindings must stay unfiltered.
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "orders" },
+        () => {
+          debounced("orders", refetchOrders);
+          debounced("risk", refetchRisk);
+          debounced("surplus", refetchSurplus);
+        }
+      )
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "stock_events", filter: `restaurant_id=eq.${restaurant.id}` },
@@ -190,20 +236,41 @@ export function OverviewClient({
           debounced("ingredients", refetchIngredients);
           debounced("risk", refetchRisk);
           debounced("events", refetchEvents);
+          debounced("surplus", refetchSurplus);
         }
       )
+      // reset restores stock via a direct ingredients UPDATE (no stock_events)
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "dishes", filter: `restaurant_id=eq.${restaurant.id}` },
+        { event: "UPDATE", schema: "public", table: "ingredients", filter: `restaurant_id=eq.${restaurant.id}` },
+        () => {
+          debounced("ingredients", refetchIngredients);
+          debounced("risk", refetchRisk);
+          debounced("surplus", refetchSurplus);
+        }
+      )
+      // "*" so newly created dishes appear live, not just edits
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "dishes" },
         () => debounced("risk", refetchRisk)
       )
-      .subscribe();
+      .subscribe((status) => {
+        // catch up on anything missed while disconnected
+        if (status === "SUBSCRIBED") {
+          refetchOrders();
+          refetchIngredients();
+          refetchRisk();
+          refetchEvents();
+          refetchSurplus();
+        }
+      });
 
     return () => {
       timers.forEach(clearTimeout);
       supabase.removeChannel(channel);
     };
-  }, [restaurant.id, refetchOrders, refetchIngredients, refetchRisk, refetchEvents]);
+  }, [restaurant.id, refetchOrders, refetchIngredients, refetchRisk, refetchEvents, refetchSurplus]);
 
   const stats = useMemo(() => computeDayStats(orders), [orders]);
   const lowCount = ingredients.filter(
@@ -212,6 +279,8 @@ export function OverviewClient({
   const dying = atRiskDishes(risk);
   const dead = risk.filter((d) => d.is_active && d.portions_left <= 0);
   const health = restaurantHealth(risk);
+  const overstock = useMemo(() => surplusIngredients(surplus).slice(0, 6), [surplus]);
+  const specialsRunning = risk.filter((d) => d.is_active && isSpecial(d));
 
   async function loadBrief() {
     setBriefLoading(true);
@@ -228,10 +297,10 @@ export function OverviewClient({
         layout
         className={`mt-6 flex items-center gap-4 rounded-xl border px-5 py-4 transition-colors duration-700 ${
           health.level === "critical"
-            ? "border-red-900/60 bg-red-950/25"
+            ? "border-red-600/35 dark:border-red-900/60 bg-red-500/10 dark:bg-red-950/25"
             : health.level === "watch"
-              ? "border-amber-800/50 bg-amber-950/15"
-              : "border-green-900/50 bg-green-950/15"
+              ? "border-amber-600/35 dark:border-amber-800/50 bg-amber-500/8 dark:bg-amber-950/15"
+              : "border-green-600/30 dark:border-green-900/50 bg-green-500/8 dark:bg-green-950/15"
         }`}
       >
         <span className="relative flex h-3 w-3 shrink-0">
@@ -258,10 +327,10 @@ export function OverviewClient({
           <p
             className={`font-mono text-[10px] uppercase tracking-[0.22em] ${
               health.level === "critical"
-                ? "text-red-400"
+                ? "text-red-600 dark:text-red-400"
                 : health.level === "watch"
-                  ? "text-amber-400"
-                  : "text-green-500"
+                  ? "text-amber-600 dark:text-amber-400"
+                  : "text-green-600 dark:text-green-500"
             }`}
           >
             {health.label}
@@ -280,14 +349,14 @@ export function OverviewClient({
         <StatCard
           label="Orders today"
           icon={ReceiptText}
-          tint="bg-[#3987e5]/15 text-[#6aa5ec]"
+          tint="bg-[#3987e5]/15 text-[#2f6fc4] dark:text-[#6aa5ec]"
           value={<NumberTicker value={stats.orderCount} />}
           hint={`${orders.filter((o) => o.status === "placed" || o.status === "cooking").length} in progress`}
         />
         <StatCard
           label="Top dish"
           icon={ChefHat}
-          tint="bg-green-500/15 text-green-500"
+          tint="bg-green-500/15 text-green-600 dark:text-green-500"
           value={
             <span className="text-xl leading-tight">
               {stats.topDishes[0]?.name ?? "—"}
@@ -298,7 +367,7 @@ export function OverviewClient({
         <StatCard
           label="Low / out stock"
           icon={Package}
-          tint="bg-amber-500/15 text-amber-400"
+          tint="bg-amber-500/15 text-amber-600 dark:text-amber-400"
           value={<NumberTicker value={lowCount} />}
           hint={`of ${ingredients.length} ingredients`}
         />
@@ -331,8 +400,8 @@ export function OverviewClient({
           </div>
 
           {dying.filter((d) => d.minutes_to_86! <= RISK_ALERT_MINUTES).length > 0 && (
-            <div className="mb-3 rounded-lg border border-red-900/60 bg-red-950/30 px-4 py-3">
-              <p className="text-sm font-medium text-red-400">
+            <div className="mb-3 rounded-lg border border-red-600/35 dark:border-red-900/60 bg-red-500/10 dark:bg-red-950/30 px-4 py-3">
+              <p className="text-sm font-medium text-red-600 dark:text-red-400">
                 {dying.filter((d) => d.minutes_to_86! <= RISK_ALERT_MINUTES).length}{" "}
                 dish(es) predicted to 86 within {RISK_ALERT_MINUTES} minutes — prep
                 more or push alternatives.
@@ -370,9 +439,9 @@ export function OverviewClient({
                       transition={{ type: "spring", stiffness: 380, damping: 32 }}
                       className={`flex items-center justify-between gap-3 rounded-md border px-3 py-2 ${
                         level === "critical"
-                          ? "border-red-900/60 bg-red-950/30"
+                          ? "border-red-600/35 dark:border-red-900/60 bg-red-500/10 dark:bg-red-950/30"
                           : level === "warm"
-                            ? "border-amber-800/50 bg-amber-950/20"
+                            ? "border-amber-600/35 dark:border-amber-800/50 bg-amber-500/10 dark:bg-amber-950/20"
                             : "bg-card"
                       }`}
                     >
@@ -386,7 +455,7 @@ export function OverviewClient({
                         <Badge
                           variant={level === "critical" ? "destructive" : "outline"}
                           className={`font-mono tabular-nums ${
-                            level === "warm" ? "border-amber-500/40 text-amber-400" : ""
+                            level === "warm" ? "border-amber-500/40 text-amber-600 dark:text-amber-400" : ""
                           }`}
                         >
                           86 in {formatEta(mins)}
@@ -404,7 +473,7 @@ export function OverviewClient({
                         <Button
                           size="sm"
                           variant="outline"
-                          className="h-7 px-2 text-xs text-red-400"
+                          className="h-7 px-2 text-xs text-red-600 dark:text-red-400"
                           disabled={acting === dish.id + "kill"}
                           onClick={() => intervene(dish.id, "kill")}
                           title="Strike it from every menu now"
@@ -425,6 +494,94 @@ export function OverviewClient({
                   <Badge variant="destructive" className="shrink-0 font-mono">
                     86&apos;d
                   </Badge>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* the other end of the radar: stock heading for waste, not for 86 */}
+          <h2 className="mb-3 mt-8 font-mono text-[11px] uppercase tracking-[0.25em] text-muted-foreground">
+            Surplus radar
+          </h2>
+
+          {specialsRunning.length > 0 && (
+            <div className="mb-3 space-y-1.5">
+              <AnimatePresence initial={false}>
+                {specialsRunning.map((dish) => (
+                  <motion.div
+                    key={dish.id}
+                    layout
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.97 }}
+                    className="flex items-center justify-between gap-3 rounded-md border border-brass/40 bg-brass/10 px-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">
+                        <Sparkles className="mr-1 inline h-3.5 w-3.5 text-brass" />
+                        {dish.name}{" "}
+                        <span className="font-mono text-brass">₹{dish.price}</span>{" "}
+                        <span className="font-mono text-xs text-muted-foreground line-through">
+                          ₹{dish.regular_price}
+                        </span>
+                      </p>
+                      {dish.special_note && (
+                        <p className="truncate text-xs text-muted-foreground">
+                          {dish.special_note}
+                        </p>
+                      )}
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 shrink-0 px-2 text-xs"
+                      disabled={acting === dish.id + "endspecial"}
+                      onClick={() => stopSpecial(dish.id)}
+                    >
+                      End special
+                    </Button>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
+          )}
+
+          {overstock.length === 0 ? (
+            <div className="rounded-lg border border-dashed p-4">
+              <p className="text-xs text-muted-foreground">
+                No overstocked ingredients right now. When stock towers over its
+                reorder level, it shows up here — one tap turns it into a
+                discounted chef&apos;s special on every menu.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {overstock.map((row) => (
+                <div
+                  key={row.id}
+                  className="flex items-center justify-between gap-3 rounded-md border bg-card px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{row.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {Number(row.stock_qty).toFixed(1)} {row.unit} on hand ·{" "}
+                      {(Number(row.stock_qty) / Number(row.reorder_level)).toFixed(1)}×
+                      reorder level
+                      {row.days_of_cover !== null
+                        ? ` · ~${row.days_of_cover} days of cover`
+                        : " · no order usage yet"}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 shrink-0 px-2 text-xs text-brass"
+                    disabled={acting === row.id + "special"}
+                    onClick={() => startSpecial(row.id)}
+                    title="Discount the dish that uses the most of this ingredient — announced on every menu instantly"
+                  >
+                    {acting === row.id + "special" ? "…" : "Run special"}
+                  </Button>
                 </div>
               ))}
             </div>
@@ -484,7 +641,7 @@ export function OverviewClient({
                       initial={{ opacity: 0, y: -8 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.35 }}
-                      className="flex items-center gap-2.5 rounded-md border border-border/60 bg-white/1.5 px-3 py-1.5 font-mono text-[11px]"
+                      className="flex items-center gap-2.5 rounded-md border border-border/60 bg-black/2 dark:bg-white/1.5 px-3 py-1.5 font-mono text-[11px]"
                     >
                       <span
                         className={`h-1.5 w-1.5 shrink-0 rounded-full ${
@@ -561,7 +718,7 @@ export function OverviewClient({
                   <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
                     Projected revenue
                   </p>
-                  <p className="mt-1 font-serif text-2xl tabular-nums text-green-500">
+                  <p className="mt-1 font-serif text-2xl tabular-nums text-green-600 dark:text-green-500">
                     {formatINR(plan.projectedRevenue)}
                   </p>
                 </div>
@@ -569,7 +726,7 @@ export function OverviewClient({
                   <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
                     Lost to stockouts
                   </p>
-                  <p className="mt-1 font-serif text-2xl tabular-nums text-red-400">
+                  <p className="mt-1 font-serif text-2xl tabular-nums text-red-600 dark:text-red-400">
                     {formatINR(plan.lostRevenue)}
                   </p>
                 </div>
@@ -586,10 +743,10 @@ export function OverviewClient({
                       .map((d) => (
                         <div
                           key={d.name}
-                          className="flex items-center justify-between rounded-md border border-red-900/50 bg-red-950/20 px-3 py-1.5 text-sm"
+                          className="flex items-center justify-between rounded-md border border-red-600/30 dark:border-red-900/50 bg-red-500/8 dark:bg-red-950/20 px-3 py-1.5 text-sm"
                         >
                           <span>{d.name}</span>
-                          <span className="font-mono text-xs text-red-400">
+                          <span className="font-mono text-xs text-red-600 dark:text-red-400">
                             dies after {d.diesAtCover} of {d.expected} expected
                           </span>
                         </div>
@@ -597,7 +754,7 @@ export function OverviewClient({
                   </div>
                 </div>
               ) : (
-                <p className="rounded-lg border border-green-900/50 bg-green-950/15 px-3 py-2 text-sm text-green-500">
+                <p className="rounded-lg border border-green-600/30 dark:border-green-900/50 bg-green-500/8 dark:bg-green-950/15 px-3 py-2 text-sm text-green-600 dark:text-green-500">
                   Stock survives the whole service — every expected order can be
                   served.
                 </p>

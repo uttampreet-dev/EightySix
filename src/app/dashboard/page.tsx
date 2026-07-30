@@ -3,8 +3,10 @@ import {
   getDishRisk,
   getIngredients,
   getRecentEvents,
+  getSurplus,
   getTodayOrders,
 } from "@/lib/engine";
+import { clearExpiredSpecials } from "@/app/actions";
 import { OverviewClient } from "./overview-client";
 
 export const dynamic = "force-dynamic";
@@ -12,11 +14,15 @@ export const dynamic = "force-dynamic";
 export default async function DashboardPage() {
   const { supabase, restaurant } = await getOwnerContext();
 
-  const [orders, ingredients, risk, events] = await Promise.all([
+  // lazy expiry — a special never outlives its window past a console visit
+  await clearExpiredSpecials(restaurant.id);
+
+  const [orders, ingredients, risk, events, surplus] = await Promise.all([
     getTodayOrders(supabase, restaurant.id),
     getIngredients(supabase, restaurant.id),
     getDishRisk(supabase, restaurant.id),
     getRecentEvents(supabase, restaurant.id),
+    getSurplus(supabase, restaurant.id),
   ]);
 
   return (
@@ -26,6 +32,7 @@ export default async function DashboardPage() {
       initialIngredients={ingredients}
       initialRisk={risk}
       initialEvents={events}
+      initialSurplus={surplus}
     />
   );
 }

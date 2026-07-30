@@ -52,9 +52,16 @@ function IngredientRow({ ingredient }: { ingredient: Ingredient }) {
     lastServer.stock !== ingredient.stock_qty ||
     lastServer.reorder !== ingredient.reorder_level
   ) {
+    // don't clobber a draft the user is typing (rush events land every few
+    // seconds) — only follow the server while the fields are untouched
+    const editing =
+      Number(stock) !== Number(lastServer.stock) ||
+      Number(reorder) !== Number(lastServer.reorder);
     setLastServer({ stock: ingredient.stock_qty, reorder: ingredient.reorder_level });
-    setStock(String(ingredient.stock_qty));
-    setReorder(String(ingredient.reorder_level));
+    if (!editing) {
+      setStock(String(ingredient.stock_qty));
+      setReorder(String(ingredient.reorder_level));
+    }
   }
 
   const dirty =
@@ -107,7 +114,7 @@ function IngredientRow({ ingredient }: { ingredient: Ingredient }) {
         {out ? (
           <Badge variant="destructive">Out</Badge>
         ) : low ? (
-          <Badge className="border-amber-500/40 bg-amber-500/15 text-amber-400">Low</Badge>
+          <Badge className="border-amber-500/40 bg-amber-500/15 text-amber-600 dark:text-amber-400">Low</Badge>
         ) : (
           <Badge variant="outline" className="text-muted-foreground">OK</Badge>
         )}
@@ -294,13 +301,13 @@ export function InventoryClient({
           </p>
         </div>
         <div className="flex items-center gap-1.5">
-          <Badge variant="outline" className="border-green-800/60 bg-green-950/30 font-mono text-green-500">
+          <Badge variant="outline" className="border-green-600/35 dark:border-green-800/60 bg-green-500/10 dark:bg-green-950/30 font-mono text-green-600 dark:text-green-500">
             {ingredients.length - lowCount} ok
           </Badge>
-          <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 font-mono text-amber-400">
+          <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 font-mono text-amber-600 dark:text-amber-400">
             {ingredients.filter((i) => Number(i.stock_qty) > 0 && Number(i.stock_qty) <= Number(i.reorder_level)).length} low
           </Badge>
-          <Badge variant="outline" className="border-red-900/60 bg-red-950/30 font-mono text-red-400">
+          <Badge variant="outline" className="border-red-600/35 dark:border-red-900/60 bg-red-500/10 dark:bg-red-950/30 font-mono text-red-600 dark:text-red-400">
             {ingredients.filter((i) => Number(i.stock_qty) <= 0).length} out
           </Badge>
           <AddIngredientDialog restaurantId={restaurant.id} onCreated={refetch} />

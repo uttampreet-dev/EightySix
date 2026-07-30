@@ -60,7 +60,7 @@ export function TablesClient({
             onClick={() => toggle(table)}
             className={`rounded-lg border p-4 text-left transition-colors ${
               table.status === "occupied"
-                ? "border-amber-800/50 bg-amber-950/20"
+                ? "border-amber-600/35 dark:border-amber-800/50 bg-amber-500/10 dark:bg-amber-950/20"
                 : "bg-card hover:bg-accent"
             }`}
           >

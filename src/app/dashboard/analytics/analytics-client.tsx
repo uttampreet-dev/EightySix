@@ -6,6 +6,7 @@ import {
   computeAnalytics,
   formatINR,
   getOrdersSince,
+  istMidnightIso,
   orderTotal,
   type Restaurant,
   type TodayOrder,
@@ -135,26 +136,33 @@ export function AnalyticsClient({
   const [orders, setOrders] = useState(initialOrders);
 
   const refetch = useCallback(async () => {
-    const since = new Date();
-    since.setDate(since.getDate() - 6);
-    since.setHours(0, 0, 0, 0);
-    setOrders(await getOrdersSince(createClient(), restaurant.id, since.toISOString()));
+    setOrders(await getOrdersSince(createClient(), restaurant.id, istMidnightIso(6)));
   }, [restaurant.id]);
 
   useEffect(() => {
     const supabase = createClient();
     let timer: ReturnType<typeof setTimeout> | null = null;
+    const schedule = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(refetch, 500);
+    };
     const channel = supabase
       .channel(`analytics-${restaurant.id}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "orders", filter: `restaurant_id=eq.${restaurant.id}` },
-        () => {
-          if (timer) clearTimeout(timer);
-          timer = setTimeout(refetch, 500);
-        }
+        schedule
       )
-      .subscribe();
+      // reset_demo bulk-DELETEs orders; DELETE payloads don't carry the
+      // filter column, so this binding must stay unfiltered.
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "orders" },
+        schedule
+      )
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") refetch();
+      });
     return () => {
       if (timer) clearTimeout(timer);
       supabase.removeChannel(channel);
