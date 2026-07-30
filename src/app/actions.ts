@@ -271,6 +271,71 @@ Return JSON: {"suggestions":[{"id":"<id from list>","reason":"<one short appetis
   return { ok: true, data: { suggestions, outOf } };
 }
 
+export type DinerChatTurn = { from: "user" | "bot"; text: string };
+
+// Diner-facing menu assistant. Same guardrails as every AI feature here:
+// prompted only with live engine data, and every dish it names is validated
+// against current availability before display — it cannot recommend a dead
+// dish, and it can act (suggestions are one tap from the cart).
+export async function askDiner(
+  restaurantId: string,
+  question: string,
+  history: DinerChatTurn[]
+): Promise<ActionResult<{ reply: string; suggestions: SwapSuggestion[] }>> {
+  const trimmed = question.trim().slice(0, 300);
+  if (!trimmed) return { ok: false, error: "Ask me something about the menu." };
+
+  const supabase = createAdminClient();
+  const availability = await getAvailability(supabase, restaurantId);
+  const open = availability.filter((d) => d.is_active && d.portions_left > 0);
+  const dead = availability.filter((d) => !d.is_active || d.portions_left <= 0);
+
+  const menu = open
+    .map(
+      (d) =>
+        `- id=${d.id} | ${d.name} | ${d.category} | ${d.veg ? "veg" : "non-veg"} | ₹${d.price}${
+          d.regular_price != null ? ` (chef's special, was ₹${d.regular_price})` : ""
+        } | ${d.portions_left} left`
+    )
+    .join("\n");
+
+  const convo = history
+    .slice(-6)
+    .map((t) => `${t.from === "bot" ? "Assistant" : "Diner"}: ${t.text}`)
+    .join("\n");
+
+  try {
+    const result = await geminiJSON<{ reply: string; picks?: { id: string; reason: string }[] }>(
+      `You are the diner-facing assistant of a North Indian restaurant. Warm, appetising, concise — 1–2 short sentences, plain text.
+
+AVAILABLE right now (the ONLY dishes you may recommend, by id):
+${menu}
+
+Sold out right now (never recommend, mention only if asked): ${dead.map((d) => d.name).join(", ") || "nothing"}.
+
+${convo ? `Conversation so far:\n${convo}\n` : ""}Diner: ${trimmed}
+
+Answer the diner. If recommending, pick at most 2 dishes from the AVAILABLE list. If they ask for something we don't serve, say so and offer the closest match. Return JSON: {"reply":"...","picks":[{"id":"<id from list>","reason":"<one short appetising line>"}]}`
+    );
+
+    const byId = new Map(open.map((d) => [d.id, d]));
+    const suggestions = (result.picks ?? [])
+      .filter((p) => byId.has(p.id))
+      .slice(0, 2)
+      .map((p) => {
+        const d = byId.get(p.id)!;
+        return { dishId: d.id, name: d.name, price: d.price, veg: d.veg, reason: p.reason };
+      });
+
+    return { ok: true, data: { reply: result.reply, suggestions } };
+  } catch {
+    return {
+      ok: false,
+      error: "The assistant is catching its breath — try again in a moment.",
+    };
+  }
+}
+
 export async function getMorningBrief(
   restaurantId: string
 ): Promise<ActionResult<{ brief: string }>> {

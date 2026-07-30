@@ -19,11 +19,13 @@ import {
   type RestaurantTable,
 } from "@/lib/engine";
 import {
+  askDiner,
   callWaiter,
   createReservation,
   placeOrder,
   submitFeedback,
   suggestSwap,
+  type DinerChatTurn,
   type SwapSuggestion,
 } from "@/app/actions";
 import { useChime } from "@/lib/use-chime";
@@ -155,6 +157,36 @@ export function MenuClient({
   const [ratedIds, setRatedIds] = useState<Set<string>>(new Set());
   const [paging, setPaging] = useState<"waiter" | "bill" | null>(null);
   const chime = useChime();
+
+  type ChatMsg = DinerChatTurn & { suggestions?: SwapSuggestion[] };
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMsgs, setChatMsgs] = useState<ChatMsg[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatBusy, setChatBusy] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [chatMsgs, chatBusy]);
+
+  async function sendChat(text: string) {
+    const question = text.trim();
+    if (!question || chatBusy) return;
+    setChatInput("");
+    const history: DinerChatTurn[] = chatMsgs.map(({ from, text: t }) => ({ from, text: t }));
+    setChatMsgs((m) => [...m, { from: "user", text: question }]);
+    setChatBusy(true);
+    const result = await askDiner(restaurant.id, question, history);
+    setChatBusy(false);
+    if (result.ok && result.data) {
+      setChatMsgs((m) => [
+        ...m,
+        { from: "bot", text: result.data!.reply, suggestions: result.data!.suggestions },
+      ]);
+    } else if (!result.ok) {
+      setChatMsgs((m) => [...m, { from: "bot", text: result.error }]);
+    }
+  }
 
   async function pageFloor(kind: "waiter" | "bill") {
     if (!tableId) return;
@@ -850,6 +882,125 @@ export function MenuClient({
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* The Expeditor — runs the pass between diner and kitchen; grounded in live availability, can act */}
+      <button
+        type="button"
+        onClick={() => setChatOpen(true)}
+        aria-label="The Expeditor — AI menu assistant"
+        className={`fixed right-4 z-30 flex h-12 items-center gap-2 rounded-full border border-brass/40 bg-background/95 px-4 shadow-lg backdrop-blur transition-all hover:border-brass ${
+          cartCount > 0 ? "bottom-24" : "bottom-5"
+        }`}
+      >
+        <Sparkles className="h-4 w-4 text-brass" />
+        <span className="text-sm font-medium">Ask the Expeditor</span>
+      </button>
+
+      <Sheet open={chatOpen} onOpenChange={setChatOpen}>
+        <SheetContent side="right" className="flex w-full flex-col p-0 sm:max-w-md">
+          <SheetHeader className="border-b border-border/60 px-4 py-4">
+            <SheetTitle className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-brass" /> The Expeditor
+            </SheetTitle>
+            <SheetDescription>
+              Runs the pass between you and the kitchen — it only ever suggests
+              dishes that are actually available right now.
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+            {chatMsgs.length === 0 && (
+              <div className="space-y-2">
+                {[
+                  "Something spicy and vegetarian?",
+                  "What's tonight's special?",
+                  "Best non-veg under ₹350?",
+                ].map((q) => (
+                  <button
+                    key={q}
+                    type="button"
+                    onClick={() => sendChat(q)}
+                    className="block w-full rounded-lg border border-border/70 bg-card px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:border-brass/40 hover:text-foreground"
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {chatMsgs.map((msg, i) => (
+              <div key={i} className={msg.from === "user" ? "flex justify-end" : ""}>
+                <div
+                  className={`max-w-[85%] rounded-lg px-3 py-2 text-sm leading-relaxed ${
+                    msg.from === "user"
+                      ? "bg-brass/15 text-foreground"
+                      : "border border-border/60 bg-card"
+                  }`}
+                >
+                  <p>{msg.text}</p>
+                  {msg.suggestions && msg.suggestions.length > 0 && (
+                    <div className="mt-2 space-y-2">
+                      {msg.suggestions.map((s) => (
+                        <div key={s.dishId} className="rounded-md border border-border/60 bg-background/60 p-2.5">
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="flex items-center gap-2 text-sm font-medium">
+                              <VegMark veg={s.veg} /> {s.name}
+                            </span>
+                            <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                              {formatINR(s.price)}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-xs text-muted-foreground">{s.reason}</p>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            className="mt-2 w-full"
+                            onClick={() => {
+                              setQty(s.dishId, (cart[s.dishId] ?? 0) + 1);
+                              toast.success(`${s.name} added to your order`);
+                            }}
+                          >
+                            Add to order
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+
+            {chatBusy && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute h-full w-full animate-ping rounded-full bg-brass opacity-60" />
+                  <span className="relative h-2 w-2 rounded-full bg-brass" />
+                </span>
+                Checking the live menu…
+              </div>
+            )}
+            <div ref={chatEndRef} />
+          </div>
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              sendChat(chatInput);
+            }}
+            className="flex gap-2 border-t border-border/60 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+          >
+            <Input
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              placeholder="Ask about dishes, spice, allergies…"
+              maxLength={300}
+            />
+            <Button type="submit" disabled={chatBusy || !chatInput.trim()}>
+              Ask
+            </Button>
+          </form>
+        </SheetContent>
+      </Sheet>
 
       {cartCount > 0 && (
         <div className="fixed inset-x-0 bottom-0 z-20 border-t border-border/60 bg-background/95 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur">
