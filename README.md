@@ -90,21 +90,25 @@ When an ingredient dies mid-service, the kitchen finds out first, waiters find o
 
 ## 📸 Screenshots
 
-| Landing | Owner Console — 86-Risk Radar |
+| Landing | Owner Console — 86-Risk + Surplus Radar |
 | :---: | :---: |
 | ![Landing](screenshots/landing.png) | ![Owner console](screenshots/console-overview.png) |
 
-| Kitchen Board | Orders → GST Billing |
+| Waiter Floor View — Diner Pings | Kitchen Board |
 | :---: | :---: |
-| ![Kitchen board](screenshots/kitchen.png) | ![Orders board](screenshots/orders-board.png) |
+| ![Waiter floor view](screenshots/waiter-floor.png) | ![Kitchen board](screenshots/kitchen.png) |
 
-| Menu CRUD + Live Recipe Editor | 7-Day Analytics + CSV Export |
+| Orders Board | Menu CRUD + Live Recipe Editor |
 | :---: | :---: |
-| ![Menu management](screenshots/menu-manage.png) | ![Analytics](screenshots/analytics.png) |
+| ![Orders board](screenshots/orders-board.png) | ![Menu management](screenshots/menu-manage.png) |
 
 <div align="center">
 
-| Diner Menu (Mobile — QR Entry) |
+| 7-Day Analytics + CSV Export |
+| :---: |
+| ![Analytics](screenshots/analytics.png) |
+
+| Diner Menu (Mobile — QR Entry, Chef's Special) |
 | :---: |
 | <img src="screenshots/menu-mobile.png" alt="Diner menu on mobile" width="360" /> |
 
