@@ -12,6 +12,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Brand } from "@/components/brand";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { DemoEntryButton } from "@/components/demo-entry";
 import { NumberTicker } from "@/components/number-ticker";
 
@@ -45,12 +46,12 @@ function MockRiskRow({
       layout
       className={`flex items-center justify-between gap-3 rounded-lg border px-3.5 py-2.5 transition-colors duration-700 ${
         dead
-          ? "border-red-900/60 bg-red-950/25"
+          ? "border-red-600/35 dark:border-red-900/60 bg-red-500/10 dark:bg-red-950/25"
           : critical
-            ? "border-red-900/60 bg-red-950/25"
+            ? "border-red-600/35 dark:border-red-900/60 bg-red-500/10 dark:bg-red-950/25"
             : warm
-              ? "border-amber-800/50 bg-amber-950/15"
-              : "border-border bg-white/[0.02]"
+              ? "border-amber-600/35 dark:border-amber-800/50 bg-amber-500/8 dark:bg-amber-950/15"
+              : "border-border bg-black/2 dark:bg-white/[0.02]"
       }`}
     >
       <div className="min-w-0">
@@ -73,7 +74,7 @@ function MockRiskRow({
         <Badge
           variant={critical ? "destructive" : "outline"}
           className={`shrink-0 font-mono text-[10px] tabular-nums ${
-            warm ? "border-amber-500/40 text-amber-400" : ""
+            warm ? "border-amber-500/40 text-amber-600 dark:text-amber-400" : ""
           }`}
         >
           86 in ~{eta}m
@@ -97,12 +98,13 @@ function HeroMock() {
   const dead = s.paneer <= 0;
 
   return (
-    <div className="relative overflow-hidden rounded-xl border border-white/10 bg-[oklch(0.155_0.006_78)] shadow-[0_40px_80px_-24px_rgba(0,0,0,0.7)]">
+    // theme-adaptive app window: paper card in light, the original charcoal in dark
+    <div className="relative overflow-hidden rounded-xl border border-border bg-card shadow-[0_40px_80px_-24px_rgba(0,0,0,0.18)] dark:border-white/10 dark:bg-[oklch(0.155_0.006_78)] dark:shadow-[0_40px_80px_-24px_rgba(0,0,0,0.7)]">
       {/* window chrome */}
-      <div className="flex items-center gap-2 border-b border-white/8 px-4 py-2.5">
-        <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
-        <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
-        <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
+      <div className="flex items-center gap-2 border-b border-border/70 px-4 py-2.5 dark:border-white/8">
+        <span className="h-2.5 w-2.5 rounded-full bg-black/12 dark:bg-white/15" />
+        <span className="h-2.5 w-2.5 rounded-full bg-black/12 dark:bg-white/15" />
+        <span className="h-2.5 w-2.5 rounded-full bg-black/12 dark:bg-white/15" />
         <span className="ml-3 truncate font-mono text-[10px] text-muted-foreground">
           tandoortales.eightysix.app/dashboard
         </span>
@@ -118,7 +120,7 @@ function HeroMock() {
       <div className="space-y-4 p-5">
         {/* stat strip */}
         <div className="grid grid-cols-3 gap-3">
-          <div className="rounded-lg border border-border bg-white/[0.02] p-3">
+          <div className="rounded-lg border border-border bg-black/2 dark:bg-white/[0.02] p-3">
             <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-muted-foreground">
               Revenue tonight
             </p>
@@ -126,7 +128,7 @@ function HeroMock() {
               <NumberTicker value={s.revenue} format={(n) => `₹${Math.round(n).toLocaleString("en-IN")}`} />
             </p>
           </div>
-          <div className="rounded-lg border border-border bg-white/[0.02] p-3">
+          <div className="rounded-lg border border-border bg-black/2 dark:bg-white/[0.02] p-3">
             <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-muted-foreground">
               Orders
             </p>
@@ -134,7 +136,7 @@ function HeroMock() {
               <NumberTicker value={s.orders} />
             </p>
           </div>
-          <div className="rounded-lg border border-border bg-white/[0.02] p-3">
+          <div className="rounded-lg border border-border bg-black/2 dark:bg-white/[0.02] p-3">
             <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-muted-foreground">
               At risk
             </p>
@@ -154,8 +156,8 @@ function HeroMock() {
           transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
           className="overflow-hidden"
         >
-          <div className="rounded-lg border border-red-900/60 bg-red-950/30 px-3.5 py-2.5">
-            <p className="font-mono text-[11px] text-red-400">
+          <div className="rounded-lg border border-red-600/35 dark:border-red-900/60 bg-red-500/10 dark:bg-red-950/30 px-3.5 py-2.5">
+            <p className="font-mono text-[11px] text-red-600 dark:text-red-400">
               {dead
                 ? "Butter Paneer 86'd — diners now offered Kadhai Paneer instead"
                 : "Butter Paneer predicted to 86 in ~34 min — prep more or push alternatives"}
@@ -253,7 +255,7 @@ const TICKER: { text: string; tone: "ok" | "low" | "dead" | "act" }[] = [
 function Ticker() {
   const items = [...TICKER, ...TICKER];
   return (
-    <div className="relative overflow-hidden border-y border-border/70 bg-white/[0.015] py-3">
+    <div className="relative overflow-hidden border-y border-border/70 bg-black/2 dark:bg-white/[0.015] py-3">
       <div className="animate-marquee flex w-max items-center gap-10">
         {items.map((item, i) => (
           <span key={i} className="flex items-center gap-2.5 font-mono text-[11px] tracking-wider">
@@ -322,7 +324,7 @@ function LifecycleMock() {
               <p className="mt-1.5 text-xs text-muted-foreground">{s.label}</p>
             )}
             {s.badge && i === 1 && (
-              <Badge className="mt-1.5 border-amber-500/40 bg-amber-500/15 text-amber-400">
+              <Badge className="mt-1.5 border-amber-500/40 bg-amber-500/15 text-amber-600 dark:text-amber-400">
                 {s.badge}
               </Badge>
             )}
@@ -490,6 +492,7 @@ export function LandingClient() {
             </a>
           </div>
           <div className="flex items-center gap-2">
+            <ThemeToggle />
             <Button asChild variant="ghost" size="sm">
               <Link href="/login">Staff sign in</Link>
             </Button>
@@ -528,14 +531,15 @@ export function LandingClient() {
               before your diners ever hit a dead end.
             </p>
             <div
-              className="animate-fade-up mt-8 flex flex-wrap items-center gap-3"
+              className="animate-fade-up mt-8 grid w-full max-w-md grid-cols-1 gap-3 sm:grid-cols-2"
               style={{ animationDelay: "270ms" }}
             >
-              <DemoEntryButton role="owner" label="Open the owner console" variant="default" />
-              <Button asChild size="lg" variant="outline">
+              <DemoEntryButton role="owner" label="Open the owner console" variant="default" className="w-full" />
+              <Button asChild size="lg" variant="outline" className="w-full">
                 <Link href="/r/demo">Live diner menu</Link>
               </Button>
-              <DemoEntryButton role="kitchen" label="Enter as kitchen" />
+              <DemoEntryButton role="kitchen" label="Enter as kitchen" className="w-full" />
+              <DemoEntryButton role="waiter" label="Enter as waiter" className="w-full" />
             </div>
             <p
               className="animate-fade-up mt-5 font-mono text-[11px] tracking-wider text-muted-foreground/70"
@@ -586,7 +590,7 @@ export function LandingClient() {
         </section>
 
         {/* engine numbers */}
-        <section id="numbers" className="border-y border-border/70 bg-white/[0.015]">
+        <section id="numbers" className="border-y border-border/70 bg-black/2 dark:bg-white/[0.015]">
           <div className="mx-auto grid w-full max-w-6xl gap-px overflow-hidden px-6 py-14 sm:grid-cols-4">
             {PROOF.map((p, i) => (
               <Reveal key={p.k} delay={i * 0.06} className="px-4 py-3 text-center">
@@ -617,7 +621,7 @@ export function LandingClient() {
             </h2>
             <p className="mx-auto mt-4 max-w-md text-muted-foreground">
               One engine — ingredients → recipes → dishes — driving the diner
-              menu, the kitchen, and the numbers. Live in the demo right now.
+              menu, the kitchen, the floor, and the numbers. Live in the demo right now.
             </p>
             <div className="mt-8 flex justify-center">
               <DemoEntryButton role="owner" label="Open the owner console" variant="default" />
@@ -625,7 +629,7 @@ export function LandingClient() {
           </Reveal>
         </section>
 
-        <footer className="border-t border-border/60 bg-white/1.5">
+        <footer className="border-t border-border/60 bg-black/2 dark:bg-white/1.5">
           <div className="mx-auto w-full max-w-6xl px-6 py-12">
             <div className="grid gap-10 sm:grid-cols-[1.4fr_1fr_1fr]">
               <div>

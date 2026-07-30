@@ -16,6 +16,7 @@ import {
   Users,
 } from "lucide-react";
 import { Brand } from "@/components/brand";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 type NavItem = { href: string; label: string; icon: React.ComponentType<{ className?: string }> };
 
@@ -57,7 +58,7 @@ export function DashboardSidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="sticky top-0 hidden h-screen w-52 shrink-0 flex-col border-r border-border/60 bg-white/1.5 px-4 py-5 lg:flex print:hidden">
+    <aside className="sticky top-0 hidden h-screen w-52 shrink-0 flex-col border-r border-border/60 bg-black/2 dark:bg-white/1.5 px-4 py-5 lg:flex print:hidden">
       <Brand className="text-lg" />
       <nav className="mt-7 flex flex-1 flex-col gap-6 overflow-y-auto">
         {SECTIONS.map((section) => (
@@ -104,6 +105,13 @@ export function DashboardSidebar() {
         >
           Kitchen ↗
         </Link>
+        <Link
+          href="/waiter"
+          className="rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          Floor ↗
+        </Link>
+        <ThemeToggle showLabel />
       </div>
     </aside>
   );
@@ -113,7 +121,8 @@ export function DashboardMobileNav() {
   const pathname = usePathname();
   const items = SECTIONS.flatMap((s) => s.items);
   return (
-    <nav className="flex gap-1 overflow-x-auto border-b border-border/60 px-4 py-2 lg:hidden print:hidden">
+    <nav className="flex items-center gap-1 overflow-x-auto border-b border-border/60 px-4 py-2 lg:hidden print:hidden">
+      <ThemeToggle />
       {items.map((item) => {
         const active =
           item.href === "/dashboard"

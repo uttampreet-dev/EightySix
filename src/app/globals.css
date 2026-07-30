@@ -51,25 +51,29 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* Light = warm paper, same brand: ink on menu card, brass deepened for contrast */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --background: oklch(0.972 0.008 88);
+  --foreground: oklch(0.22 0.012 75);
+  --card: oklch(0.99 0.005 90);
+  --card-foreground: oklch(0.22 0.012 75);
+  --popover: oklch(0.995 0.004 90);
+  --popover-foreground: oklch(0.22 0.012 75);
+  --primary: oklch(0.26 0.015 75);
+  --primary-foreground: oklch(0.975 0.008 88);
+  --secondary: oklch(0.93 0.012 87);
+  --secondary-foreground: oklch(0.26 0.015 75);
+  --muted: oklch(0.94 0.01 88);
+  --muted-foreground: oklch(0.46 0.016 80);
+  --accent: oklch(0.93 0.012 87);
+  --accent-foreground: oklch(0.26 0.015 75);
+  --destructive: oklch(0.55 0.21 26);
+  --border: oklch(0.3 0.025 80 / 15%);
+  --input: oklch(0.3 0.025 80 / 20%);
+  --ring: oklch(0.55 0.105 84 / 50%);
+  --brass: oklch(0.55 0.105 84);
+  --brass-dim: oklch(0.63 0.09 82);
+  --grid-line: oklch(0.3 0.03 80 / 0.05);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -107,6 +111,7 @@
   --ring: oklch(0.78 0.09 84 / 60%);
   --brass: oklch(0.8 0.1 84);
   --brass-dim: oklch(0.7 0.085 82);
+  --grid-line: oklch(0.95 0.03 85 / 0.045);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -193,8 +198,8 @@ body::after {
 /* faint blueprint grid, masked so it fades toward the edges */
 .bg-grid {
   background-image:
-    linear-gradient(to right, oklch(0.95 0.03 85 / 0.045) 1px, transparent 1px),
-    linear-gradient(to bottom, oklch(0.95 0.03 85 / 0.045) 1px, transparent 1px);
+    linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
   background-size: 56px 56px;
   mask-image: radial-gradient(ellipse 75% 65% at 50% 35%, black 30%, transparent 75%);
 }
