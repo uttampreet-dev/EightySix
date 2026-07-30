@@ -12,9 +12,11 @@ import {
   type Restaurant,
 } from "@/lib/engine";
 import { adjustStock, bumpOrderStatus } from "@/app/actions";
+import { useChime } from "@/lib/use-chime";
 import { ORDER_STATUS_BADGE } from "@/lib/status-colors";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Toaster } from "@/components/ui/sonner";
 import { SignOutButton } from "@/components/sign-out-button";
 
@@ -40,39 +42,24 @@ export function KitchenClient({
 }) {
   const [orders, setOrders] = useState(initialOrders);
   const [ingredients, setIngredients] = useState(initialIngredients);
-  const [now, setNow] = useState(() => Date.now());
+  // null until mount: order ages must not render on the server, or a minute
+  // boundary between SSR and hydration throws a hydration mismatch
+  const [now, setNow] = useState<number | null>(null);
   const [soundOn, setSoundOn] = useState(true);
   const soundRef = useRef(true);
-  const audioCtxRef = useRef<AudioContext | null>(null);
-
-  // KDS-style two-tone chime on new orders. WebAudio needs a user gesture
-  // first; until one happens the try/catch keeps it silent.
+  const play = useChime();
   const chime = useCallback(() => {
-    if (!soundRef.current) return;
-    try {
-      audioCtxRef.current ??= new AudioContext();
-      const ctx = audioCtxRef.current;
-      const t = ctx.currentTime;
-      [880, 1174.66].forEach((freq, i) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = "sine";
-        osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0.0001, t + i * 0.13);
-        gain.gain.exponentialRampToValueAtTime(0.15, t + i * 0.13 + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.0001, t + i * 0.13 + 0.4);
-        osc.connect(gain).connect(ctx.destination);
-        osc.start(t + i * 0.13);
-        osc.stop(t + i * 0.13 + 0.45);
-      });
-    } catch {
-      // no gesture yet or audio unavailable — stay silent
-    }
-  }, []);
+    if (soundRef.current) play();
+  }, [play]);
 
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 15000);
-    return () => clearInterval(t);
+    const tick = () => setNow(Date.now());
+    const t0 = setTimeout(tick, 0); // first paint after hydration
+    const t = setInterval(tick, 15000);
+    return () => {
+      clearTimeout(t0);
+      clearInterval(t);
+    };
   }, []);
 
   const refetchOrders = useCallback(async () => {
@@ -120,6 +107,16 @@ export function KitchenClient({
           orderTimer = setTimeout(refetchOrders, 300);
         }
       )
+      // reset_demo bulk-DELETEs orders; DELETE payloads don't carry the
+      // filter column, so this binding must stay unfiltered.
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "orders" },
+        () => {
+          if (orderTimer) clearTimeout(orderTimer);
+          orderTimer = setTimeout(refetchOrders, 300);
+        }
+      )
       .on(
         "postgres_changes",
         {
@@ -133,7 +130,27 @@ export function KitchenClient({
           stockTimer = setTimeout(refetchIngredients, 300);
         }
       )
-      .subscribe();
+      // reset restores stock via a direct ingredients UPDATE (no stock_events)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "ingredients",
+          filter: `restaurant_id=eq.${restaurant.id}`,
+        },
+        () => {
+          if (stockTimer) clearTimeout(stockTimer);
+          stockTimer = setTimeout(refetchIngredients, 300);
+        }
+      )
+      .subscribe((status) => {
+        // catch up on anything missed while disconnected
+        if (status === "SUBSCRIBED") {
+          refetchOrders();
+          refetchIngredients();
+        }
+      });
 
     return () => {
       if (orderTimer) clearTimeout(orderTimer);
@@ -181,6 +198,7 @@ export function KitchenClient({
             >
               {soundOn ? "Sound on" : "Muted"}
             </Button>
+            <ThemeToggle />
             <SignOutButton />
           </div>
         </div>
@@ -227,7 +245,7 @@ export function KitchenClient({
                         {order.status}
                       </Badge>
                       <span className="text-xs text-muted-foreground">
-                        {orderAge(order.created_at, now)}
+                        {now !== null && orderAge(order.created_at, now)}
                       </span>
                     </div>
                   </div>
@@ -266,9 +284,9 @@ export function KitchenClient({
                   key={ingredient.id}
                   className={`flex items-center justify-between gap-2 rounded-md border px-3 py-2 ${
                     tone === "out"
-                      ? "border-red-900/60 bg-red-950/30"
+                      ? "border-red-600/35 dark:border-red-900/60 bg-red-500/10 dark:bg-red-950/30"
                       : tone === "low"
-                        ? "border-amber-800/50 bg-amber-950/20"
+                        ? "border-amber-600/35 dark:border-amber-800/50 bg-amber-500/10 dark:bg-amber-950/20"
                         : "bg-card"
                   }`}
                 >
@@ -283,9 +301,9 @@ export function KitchenClient({
                       transition={{ duration: 0.5 }}
                       className={`text-xs tabular-nums ${
                         tone === "out"
-                          ? "text-red-400"
+                          ? "text-red-600 dark:text-red-400"
                           : tone === "low"
-                            ? "text-amber-400"
+                            ? "text-amber-600 dark:text-amber-400"
                             : "text-muted-foreground"
                       }`}
                     >
@@ -312,7 +330,7 @@ export function KitchenClient({
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-7 px-2 text-xs text-amber-400"
+                      className="h-7 px-2 text-xs text-amber-600 dark:text-amber-400"
                       disabled={tone !== "ok"}
                       onClick={() => stock(ingredient, "low")}
                     >
@@ -321,7 +339,7 @@ export function KitchenClient({
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-7 px-2 text-xs text-red-400"
+                      className="h-7 px-2 text-xs text-red-600 dark:text-red-400"
                       disabled={tone === "out"}
                       onClick={() => stock(ingredient, "out")}
                     >

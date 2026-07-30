@@ -12,18 +12,22 @@ import {
   formatINR,
   getAvailability,
   getOrdersByIds,
+  isSpecial,
   type DishAvailability,
   type OrderWithItems,
   type Restaurant,
   type RestaurantTable,
 } from "@/lib/engine";
 import {
+  callWaiter,
   createReservation,
   placeOrder,
   submitFeedback,
   suggestSwap,
   type SwapSuggestion,
 } from "@/app/actions";
+import { useChime } from "@/lib/use-chime";
+import { BellRing, ReceiptText, Sparkles } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ORDER_STATUS_BADGE } from "@/lib/status-colors";
@@ -53,6 +57,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Toaster } from "@/components/ui/sonner";
 
 function DishThumb({
@@ -67,7 +72,7 @@ function DishThumb({
   const src = dishImage({ name, img });
   if (!src) {
     return (
-      <div className="flex h-19 w-19 shrink-0 items-center justify-center rounded-md border border-border/60 bg-white/1.5">
+      <div className="flex h-19 w-19 shrink-0 items-center justify-center rounded-md border border-border/60 bg-black/2 dark:bg-white/1.5">
         <span className="font-serif text-2xl text-brass/50">{name.charAt(0)}</span>
       </div>
     );
@@ -83,7 +88,7 @@ function DishThumb({
         unoptimized
       />
       {out && (
-        <span className="absolute inset-0 flex items-center justify-center bg-background/55 font-mono text-[10px] tracking-wider text-red-400">
+        <span className="absolute inset-0 flex items-center justify-center bg-background/55 font-mono text-[10px] tracking-wider text-red-600 dark:text-red-400">
           86&apos;D
         </span>
       )}
@@ -148,6 +153,22 @@ export function MenuClient({
   const [rating, setRating] = useState(0);
   const [ratingComment, setRatingComment] = useState("");
   const [ratedIds, setRatedIds] = useState<Set<string>>(new Set());
+  const [paging, setPaging] = useState<"waiter" | "bill" | null>(null);
+  const chime = useChime();
+
+  async function pageFloor(kind: "waiter" | "bill") {
+    if (!tableId) return;
+    setPaging(kind);
+    const result = await callWaiter(restaurant.id, tableId, kind);
+    setPaging(null);
+    if (result.ok) {
+      toast.success(kind === "bill" ? "Bill requested" : "Waiter on the way", {
+        description: "The floor team just got pinged — watch them appear.",
+      });
+    } else {
+      toast.error(result.error);
+    }
+  }
 
   async function submitReservation(e: React.FormEvent) {
     e.preventDefault();
@@ -172,11 +193,20 @@ export function MenuClient({
   async function submitRating() {
     if (!rateFor || rating === 0) return;
     const result = await submitFeedback(rateFor.id, rating, ratingComment);
-    if (!result.ok) toast.error(result.error);
-    else {
-      toast.success("Thanks for the feedback!");
-      setRatedIds((s) => new Set(s).add(rateFor.id));
+    if (!result.ok) {
+      toast.error(result.error);
+      // duplicate rating: retract the button; anything else: keep the
+      // dialog (and the typed comment) so the diner can retry
+      if (result.error.includes("already rated")) {
+        setRatedIds((s) => new Set(s).add(rateFor.id));
+        setRateFor(null);
+        setRating(0);
+        setRatingComment("");
+      }
+      return;
     }
+    toast.success("Thanks for the feedback!");
+    setRatedIds((s) => new Set(s).add(rateFor.id));
     setRateFor(null);
     setRating(0);
     setRatingComment("");
@@ -192,6 +222,10 @@ export function MenuClient({
   useEffect(() => {
     dishesRef.current = dishes;
   }, [dishes]);
+  const cartRef = useRef(cart);
+  useEffect(() => {
+    cartRef.current = cart;
+  }, [cart]);
 
   const refetch = useCallback(async () => {
     const supabase = createClient();
@@ -213,8 +247,41 @@ export function MenuClient({
           description: `Only ${dish.portions_left} left.`,
         });
       }
+      if (!isSpecial(before) && isSpecial(dish)) {
+        toast.success(`${dish.name} is tonight's chef's special`, {
+          description: `Now ${formatINR(dish.price)} (was ${formatINR(dish.regular_price!)}).`,
+        });
+      }
     }
     setDishes(fresh);
+
+    // A dish that died (or thinned out) must not stay stuck in the cart —
+    // otherwise every "Place order" fails forever with no way out.
+    const freshById = new Map(fresh.map((d) => [d.id, d]));
+    const next: Record<string, number> = {};
+    let changed = false;
+    for (const [id, qty] of Object.entries(cartRef.current)) {
+      if (qty <= 0) continue;
+      const dish = freshById.get(id);
+      const cap =
+        dish && dish.is_active && dish.portions_left > 0
+          ? Math.min(qty, dish.portions_left)
+          : 0;
+      if (cap > 0) next[id] = cap;
+      if (cap !== qty) {
+        changed = true;
+        if (dish && cap === 0) {
+          toast.error(`${dish.name} was removed from your order`, {
+            description: "It just sold out.",
+          });
+        } else if (dish && cap < qty) {
+          toast.warning(`Only ${cap} × ${dish.name} left`, {
+            description: "Your order was adjusted.",
+          });
+        }
+      }
+    }
+    if (changed) setCart(next);
   }, [restaurant.id]);
 
   // My orders: ids live in localStorage so the strip survives reloads.
@@ -230,6 +297,11 @@ export function MenuClient({
     for (const order of orders) {
       const prev = orderStatusRef.current.get(order.id);
       if (prev && prev !== order.status && STATUS_COPY[order.status]) {
+        if (order.status === "served") {
+          // the "food's here" moment deserves more than a toast
+          chime([987.77, 1318.51]);
+          if (typeof navigator !== "undefined") navigator.vibrate?.([120, 60, 120]);
+        }
         toast.success(
           `Your order${order.tables ? ` for table ${order.tables.label}` : ""} is ${STATUS_COPY[order.status]}`
         );
@@ -245,7 +317,7 @@ export function MenuClient({
       localStorage.setItem(storageKey, JSON.stringify(activeIds));
     }
     setMyOrders(active);
-  }, [storageKey]);
+  }, [storageKey, chime]);
 
   useEffect(() => {
     try {
@@ -276,6 +348,13 @@ export function MenuClient({
         },
         () => refetchMyOrders()
       )
+      // reset_demo bulk-DELETEs orders; DELETE payloads don't carry the
+      // filter column, so this binding must stay unfiltered.
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "orders" },
+        () => refetchMyOrders()
+      )
       .on(
         "postgres_changes",
         {
@@ -286,17 +365,30 @@ export function MenuClient({
         },
         scheduleRefetch
       )
+      // reset restores stock via a direct ingredients UPDATE (no stock_events)
       .on(
         "postgres_changes",
         {
           event: "UPDATE",
           schema: "public",
-          table: "dishes",
+          table: "ingredients",
           filter: `restaurant_id=eq.${restaurant.id}`,
         },
         scheduleRefetch
       )
-      .subscribe();
+      // "*" so newly added dishes appear live, not just edits
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "dishes" },
+        scheduleRefetch
+      )
+      .subscribe((status) => {
+        // catch up on anything missed while backgrounded/disconnected
+        if (status === "SUBSCRIBED") {
+          scheduleRefetch();
+          refetchMyOrders();
+        }
+      });
 
     return () => {
       if (timer) clearTimeout(timer);
@@ -333,6 +425,7 @@ export function MenuClient({
     setSwapFor(dish);
     setSwaps([]);
     setSwapError(null);
+    setSwapOutOf(null);
     setSwapLoading(true);
     const result = await suggestSwap(dish.id);
     setSwapLoading(false);
@@ -382,10 +475,11 @@ export function MenuClient({
               <p className="text-xs text-muted-foreground">{restaurant.tagline}</p>
             )}
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" onClick={() => setReserveOpen(true)}>
               Reserve a table
             </Button>
+            <ThemeToggle />
             <div className="flex items-center gap-2">
               <span className="relative flex h-2 w-2">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-500 opacity-60" />
@@ -397,6 +491,32 @@ export function MenuClient({
         </div>
       </header>
 
+      {tableId && (
+        <div className="mt-3 flex items-center gap-2 rounded-lg border border-border/60 bg-card px-3 py-2">
+          <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+            Table {tables.find((t) => t.id === tableId)?.label} · need something?
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={paging !== null}
+            onClick={() => pageFloor("waiter")}
+          >
+            <BellRing className="h-3.5 w-3.5" />
+            {paging === "waiter" ? "Paging…" : "Call waiter"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={paging !== null}
+            onClick={() => pageFloor("bill")}
+          >
+            <ReceiptText className="h-3.5 w-3.5" />
+            {paging === "bill" ? "Paging…" : "Get bill"}
+          </Button>
+        </div>
+      )}
+
       {myOrders.length > 0 && (
         <section className="mt-4 space-y-1.5">
           {myOrders.map((order) => (
@@ -407,7 +527,7 @@ export function MenuClient({
               transition={{ duration: 0.4 }}
               className={`flex items-center gap-3 rounded-lg border px-3.5 py-2.5 ${
                 order.status === "served"
-                  ? "border-green-900/50 bg-green-950/15"
+                  ? "border-green-600/30 dark:border-green-900/50 bg-green-500/8 dark:bg-green-950/15"
                   : "border-brass/25 bg-brass/5"
               }`}
             >
@@ -591,10 +711,28 @@ export function MenuClient({
                         {dish.name}
                       </h3>
                     </div>
-                    <span className="shrink-0 font-mono text-sm tabular-nums text-muted-foreground">
-                      {formatINR(dish.price)}
+                    <span className="shrink-0 text-right">
+                      <span
+                        className={`font-mono text-sm tabular-nums ${
+                          isSpecial(dish) ? "text-brass" : "text-muted-foreground"
+                        }`}
+                      >
+                        {formatINR(dish.price)}
+                      </span>
+                      {isSpecial(dish) && (
+                        <span className="block font-mono text-[11px] tabular-nums text-muted-foreground line-through">
+                          {formatINR(dish.regular_price!)}
+                        </span>
+                      )}
                     </span>
                   </div>
+
+                  {isSpecial(dish) && !out && (
+                    <p className="mt-1.5 flex items-start gap-1 text-xs leading-snug text-brass">
+                      <Sparkles className="mt-0.5 h-3 w-3 shrink-0" />
+                      <span>{dish.special_note ?? "Chef's special — today only."}</span>
+                    </p>
+                  )}
 
                   <div className="mt-3 flex items-center justify-between">
                     <motion.div
@@ -608,7 +746,7 @@ export function MenuClient({
                           86&apos;d — sold out
                         </Badge>
                       ) : state === "low" ? (
-                        <Badge className="border-amber-500/40 bg-amber-500/15 text-amber-400">
+                        <Badge className="border-amber-500/40 bg-amber-500/15 text-amber-600 dark:text-amber-400">
                           Only {dish.portions_left} left
                         </Badge>
                       ) : (
@@ -714,7 +852,7 @@ export function MenuClient({
       </Dialog>
 
       {cartCount > 0 && (
-        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-border/60 bg-background/95 p-4 backdrop-blur">
+        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-border/60 bg-background/95 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur">
           <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-4">
             <div>
               <p className="text-sm font-medium">
@@ -730,7 +868,7 @@ export function MenuClient({
               <SheetTrigger asChild>
                 <Button>Review order</Button>
               </SheetTrigger>
-              <SheetContent side="bottom" className="mx-auto max-w-3xl">
+              <SheetContent side="bottom" className="mx-auto max-h-[85dvh] max-w-3xl overflow-y-auto">
                 <SheetHeader>
                   <SheetTitle>Your order</SheetTitle>
                   <SheetDescription>
