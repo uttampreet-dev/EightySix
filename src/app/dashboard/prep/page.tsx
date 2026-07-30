@@ -1,8 +1,8 @@
+import { Suspense } from "react";
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getRestaurantBySlug, formatINR, type Restaurant } from "@/lib/engine";
+import { getOwnerContext } from "@/lib/owner";
+import { formatINR } from "@/lib/engine";
 import { geminiText } from "@/lib/gemini";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,30 +32,50 @@ type PrepRow = {
   est_cost: number;
 };
 
-export default async function PrepSheetPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login?next=/dashboard/prep");
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("restaurant_id")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  let restaurant: Restaurant | null = null;
-  if (profile?.restaurant_id) {
-    const { data } = await supabase
-      .from("restaurants")
-      .select("id, name, slug, tagline")
-      .eq("id", profile.restaurant_id)
-      .maybeSingle();
-    restaurant = data;
+// The AI narrative streams in behind the numbers: the sheet renders
+// immediately, the notes card fills in when Gemini answers.
+async function ChefNotes({ prompt }: { prompt: string }) {
+  let narrative: string | null = null;
+  try {
+    narrative = await geminiText(prompt);
+  } catch {
+    narrative = null;
   }
-  if (!restaurant) restaurant = await getRestaurantBySlug(supabase, "demo");
-  if (!restaurant) notFound();
+  if (!narrative) return null;
+  return (
+    <section className="rounded-lg border bg-card p-4">
+      <h2 className="mb-2 text-sm font-medium uppercase tracking-widest text-muted-foreground">
+        Chef&apos;s notes
+      </h2>
+      <div className="space-y-1 text-sm leading-relaxed">
+        {narrative
+          .split("\n")
+          .filter((l) => l.trim())
+          .map((line, i) => (
+            <p key={i}>{line}</p>
+          ))}
+      </div>
+    </section>
+  );
+}
+
+function ChefNotesFallback() {
+  return (
+    <section className="rounded-lg border bg-card p-4 print:hidden">
+      <h2 className="mb-2 text-sm font-medium uppercase tracking-widest text-muted-foreground">
+        Chef&apos;s notes
+      </h2>
+      <div className="space-y-2">
+        <div className="h-3 w-4/5 animate-pulse rounded bg-muted" />
+        <div className="h-3 w-3/5 animate-pulse rounded bg-muted" />
+        <div className="h-3 w-2/3 animate-pulse rounded bg-muted" />
+      </div>
+    </section>
+  );
+}
+
+export default async function PrepSheetPage() {
+  const { restaurant } = await getOwnerContext("/dashboard/prep");
 
   const admin = createAdminClient();
   const { data, error } = await admin.rpc("prep_sheet", { rid: restaurant.id });
@@ -75,19 +95,10 @@ export default async function PrepSheetPage() {
 
   const tomorrow = tomorrowLabel();
 
-  let narrative: string | null = null;
-  if (prepRows.length > 0) {
-    try {
-      narrative = await geminiText(
-        `You are a head chef's planner. In 3 short bullet lines (plain text, no markdown), give prep notes for tomorrow (${tomorrow}) at a North Indian restaurant, based on predicted ingredient usage (from real order history):
+  const notesPrompt = `You are a head chef's planner. In 3 short bullet lines (plain text, no markdown), give prep notes for tomorrow (${tomorrow}) at a North Indian restaurant, based on predicted ingredient usage (from real order history):
 ${prepRows.slice(0, 12).map((r) => `${r.ingredient}: predicted ${r.predicted_usage}${r.unit}, in stock ${r.current_stock}${r.unit}`).join("\n")}
 Purchase order needed: ${orderRows.map((r) => `${r.ingredient} ${r.reorder_qty}${r.unit}`).join(", ") || "nothing"}.
-Be practical: soak/marinate/thaw lead times, what to buy first thing.`
-      );
-    } catch {
-      narrative = null;
-    }
-  }
+Be practical: soak/marinate/thaw lead times, what to buy first thing.`;
 
   return (
     <div className="mx-auto w-full max-w-3xl flex-1 px-4 pb-16">
@@ -121,21 +132,9 @@ Be practical: soak/marinate/thaw lead times, what to buy first thing.`
         </p>
       ) : (
         <div className="space-y-8">
-          {narrative && (
-            <section className="rounded-lg border bg-card p-4">
-              <h2 className="mb-2 text-sm font-medium uppercase tracking-widest text-muted-foreground">
-                Chef&apos;s notes
-              </h2>
-              <div className="space-y-1 text-sm leading-relaxed">
-                {narrative
-                  .split("\n")
-                  .filter((l) => l.trim())
-                  .map((line, i) => (
-                    <p key={i}>{line}</p>
-                  ))}
-              </div>
-            </section>
-          )}
+          <Suspense fallback={<ChefNotesFallback />}>
+            <ChefNotes prompt={notesPrompt} />
+          </Suspense>
 
           {[...byStation.entries()].map(([station, stationRows]) => (
             <section key={station}>
