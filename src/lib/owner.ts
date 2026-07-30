@@ -23,6 +23,7 @@ export async function getOwnerContext(next = "/dashboard"): Promise<OwnerContext
     .eq("id", user.id)
     .maybeSingle();
   if (profile?.role === "kitchen") redirect("/kitchen");
+  if (profile?.role === "waiter") redirect("/waiter");
 
   let restaurant: Restaurant | null = null;
   if (profile?.restaurant_id) {

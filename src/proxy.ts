@@ -30,9 +30,10 @@ export async function proxy(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const path = request.nextUrl.pathname;
-  const isProtected = path.startsWith("/dashboard") || path.startsWith("/kitchen");
-  const isAuthPage = path.startsWith("/login") || path.startsWith("/signup");
-
+  const isProtected =
+    path.startsWith("/dashboard") ||
+    path.startsWith("/kitchen") ||
+    path.startsWith("/waiter");
   if (!user && isProtected) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
@@ -41,16 +42,14 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (user && isAuthPage) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/dashboard";
-    url.search = "";
-    return NextResponse.redirect(url);
-  }
-
+  // Signed-in visits to /login and /signup are deliberately NOT redirected
+  // away: the auth pages must always be reachable so anyone can verify that
+  // email/password and Google sign-in genuinely work end-to-end. They render
+  // a signed-in notice with continue/sign-out instead. (The matcher still
+  // covers them so sessions refresh there too.)
   return response;
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/kitchen/:path*", "/login", "/signup"],
+  matcher: ["/dashboard/:path*", "/kitchen/:path*", "/waiter/:path*", "/login", "/signup"],
 };
