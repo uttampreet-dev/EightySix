@@ -74,7 +74,7 @@ When an ingredient dies mid-service, the kitchen finds out first, waiters find o
 5. **Scroll to the Surplus radar** → press **"Run special"** on an overstocked ingredient — the engine picks the dish that moves the most of it, discounts it, and the **chef's special** appears on the diner menu with a struck-through price, live.
 6. **Tap the dead dish** on the menu → the AI names the ingredient that ran out and offers the closest available swap.
 7. **Third tab — the floor:** enter as **waiter**. On the diner tab press **"Call waiter"** or **"Get bill"** → the floor board chimes and shows the table instantly; it also lists which dishes to warn diners about *before they order*, and which specials to push.
-8. **Bill it:** owner console → Orders → a served order → **Generate bill** — GST receipt with a scannable **UPI payment QR** for the exact total.
+8. **Bill it:** owner console → Orders → a served order → **Generate bill** → **Collect via UPI** — the payment window shows the QR, the gateway confirms in seconds, and the receipt flips to PAID on its own.
 9. **Reset demo** restores the seed state anytime.
 
 ### 🔑 Demo Credentials
@@ -88,6 +88,8 @@ When an ingredient dies mid-service, the kitchen finds out first, waiters find o
 
 *(All behind one-click buttons on the login page — you never have to type these.)*
 
+**Testing auth?** `/login` offers all three methods — **password**, a **one-time email code**, and **Google** — and stays reachable while signed in, so every method can be exercised end-to-end at any time. Every surface also carries a **light / dark / auto** theme toggle.
+
 ## 📸 Screenshots
 
 | Landing | Owner Console — 86-Risk + Surplus Radar |
@@ -97,10 +99,6 @@ When an ingredient dies mid-service, the kitchen finds out first, waiters find o
 | Waiter Floor View — Diner Pings | Kitchen Board |
 | :---: | :---: |
 | ![Waiter floor view](screenshots/waiter-floor.png) | ![Kitchen board](screenshots/kitchen.png) |
-
-| Orders Board | Menu CRUD + Live Recipe Editor |
-| :---: | :---: |
-| ![Orders board](screenshots/orders-board.png) | ![Menu management](screenshots/menu-manage.png) |
 
 | 7-Day Analytics + CSV Export | Diner Menu — QR Entry, Chef's Special |
 | :---: | :---: |
@@ -125,7 +123,7 @@ flowchart LR
     subgraph Supabase["Supabase (Postgres)"]
         ENGINE["⚙️ THE ENGINE (pure SQL)<br/>stock_events ledger + triggers<br/>unit-price snapshots<br/>dish_availability · dish_risk<br/>ingredient_surplus · service_calls<br/>prep_sheet() forecaster"]
         RT["Realtime<br/>(websockets)"]
-        AUTH["Auth<br/>email + Google OAuth<br/>roles via RLS"]
+        AUTH["Auth<br/>password · email OTP code<br/>Google OAuth · roles via RLS"]
     end
 
     GEMINI["✨ Gemini<br/>swap suggestions · manager brief<br/>special pitches · prep notes<br/>feedback themes"]
@@ -139,18 +137,6 @@ flowchart LR
     ENGINE -->|row changes| RT
     RT -.->|live push, no polling| DINER & KITCHEN & WAITER & CONSOLE
     PROXY --> AUTH
-```
-
-### How a single order changes everything
-
-```mermaid
-flowchart LR
-    A["🍛 Order placed<br/>Butter Paneer ×2"] -->|trigger| B["stock_events ledger<br/>one depletion event<br/>per recipe ingredient"]
-    B -->|trigger| C["dish_availability<br/>floor(min(stock ÷<br/>qty_per_portion))"]
-    C --> D["dish_risk<br/>ETA = portions × 30<br/>÷ 30-min velocity"]
-    D --> E["🔴 Radar alert<br/>'86 in ~34 min'"]
-    C --> F["⚡ Dish dies: struck from<br/>every menu · AI swap<br/>offered from live stock"]
-    B --> G["prep_sheet()<br/>tomorrow's kg +<br/>purchase order"]
 ```
 
 📖 Deep dive — request lifecycle, realtime fan-out, design decisions: **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**
@@ -178,29 +164,15 @@ Every number on screen derives from these rows — no mock data, no hardcoded co
 Live per-dish availability · 86-risk radar with time-of-death · 45-min alerts · one-tap radar interventions (restock quantity *computed* from the recipe graph to cover ~2h at current pace) · **surplus radar**: overstock detected from stock vs reorder level + trailing usage, one tap launches a discounted **chef's special** on every menu · **service planner**: a deterministic what-if — "150 diners tonight?" → exactly which dishes die at which cover, a priced buy list, projected vs lost revenue · restaurant status banner · prep-sheet forecaster + purchase order
 
 ### 🏪 Restaurant Operations
-QR table entry · cart + live order tracking with a served-order chime on the diner's phone · **call waiter / get bill** from the table · **waiter floor view**: live table map, diner pings with chime, arriving reservations, dishes-to-warn-about and specials-to-push · kitchen queue with chime + one-tap stock board · orders board → GST billing with a **UPI payment window** (scan → gateway confirms → auto-recorded; cash fallback) and reconciled round-off · ledger-audited inventory · menu CRUD with live recipe editor · reservations (book → seat → complete) · tables · staff accounts (owner / kitchen / waiter) · 7-day analytics with CSV export
+QR table entry · cart + live order tracking with a served-order chime on the diner's phone (the cart even self-heals if a dish dies while it's in there) · **call waiter / get bill** from the table · **waiter floor view**: live table map, diner pings with chime, arriving reservations, dishes-to-warn-about and specials-to-push · kitchen queue with chime + one-tap stock board · orders board → GST billing with a **UPI payment window** (scan → gateway confirms → auto-recorded; cash fallback) and reconciled round-off · ledger-audited inventory · menu CRUD with live recipe editor · reservations (book → seat → complete) · tables · staff accounts (owner / kitchen / waiter) · 7-day analytics with CSV export
 
 ### 🤖 AI Features
-Dead-dish swap suggestions (with the real cause: *"kitchen ran out of paneer"*) · chef's-special one-line pitches · manager brief · chef's prep notes · feedback theme summaries — every AI call timeboxed with a deterministic fallback
+Dead-dish swap suggestions (with the real cause: *"kitchen ran out of paneer"*) · chef's-special one-line pitches · manager brief · chef's prep notes (streamed in behind the numbers — the sheet never waits on the model) · feedback theme summaries — every AI call timeboxed with a deterministic fallback
 
 ### 🎬 Demo Experience
-One-click role entry (all four surfaces) · Simulate Dinner Rush · self-resetting seed restaurant · diner ratings · printable QRs, receipts and prep sheets
+One-click role entry (all four surfaces) · Simulate Dinner Rush · a self-resetting seed restaurant that wakes up **mid-service** — a week of order history, today's lunch settled, tonight's bookings, diner ratings already in · light/dark/auto theme everywhere · printable QRs, receipts and prep sheets
 
 📖 Every feature, every route, all 24 server actions: **[docs/FEATURES.md](docs/FEATURES.md)**
-
-## 🆕 What's New
-
-The engine recently grew a second edge, a fourth surface, and a hardening pass.
-
-| Area | What's new |
-|---|---|
-| **Surplus interventions** | The radar now watches both ends: `ingredient_surplus` view spots overstock; one tap computes and launches a discounted chef's special that fans out to every menu (with a Gemini-written, engine-grounded pitch) |
-| **Waiter floor view** | A 4th realtime surface (`/waiter`, new `waiter` role): live table map, diner service pings with chime, arriving reservations, "warn before they order" 86 alerts, specials to push |
-| **Diner service loop** | "Call waiter" / "Get bill" from the table QR menu → floor board chimes in the same second; served orders now chime + vibrate on the diner's phone |
-| **UPI billing** | A counter payment window: scannable UPI QR for the exact total, gateway confirmation auto-recorded (sandbox), cash fallback — plus paise-exact CGST/SGST with a reconciled round-off line |
-| **Money integrity** | `order_items.unit_price` frozen at order time — running a special (or any price edit) can no longer rewrite historical bills or analytics |
-| **Security hardening** | Every operational server action now resolves the caller's session + role before writing (`requireStaff`); client-supplied IDs validated against the restaurant; order statuses can only move forward (no reverting a paid order) |
-| **Correctness sweep** | 27 defects found by an adversarial review and fixed — IST-pinned analytics bucketing (correct on UTC deploys, no hydration mismatches), carts self-heal when a dish dies mid-order, every surface reconciles after "Reset demo", radar keeps a fast-selling last portion visible, kitchen chime survives Chrome's autoplay policy, AI calls timeboxed at 8s with fallbacks, loading/error boundaries across the console |
 
 ## 🏆 User Stories Completed
 
@@ -221,7 +193,7 @@ The engine recently grew a second edge, a fourth surface, and a hardening pass.
 | **Core Framework** | **Next.js 16.2 (App Router)** | Server components, server actions for every write, Turbopack dev |
 | **UI Runtime** | **React 19** | Client islands only where interactivity demands it |
 | **Language** | **TypeScript 5** | End-to-end typed — engine rows to UI props |
-| **Styling** | **Tailwind CSS v4 + shadcn/ui (Radix)** | Design system, dark aesthetics, `motion` micro-animations |
+| **Styling** | **Tailwind CSS v4 + shadcn/ui (Radix)** | Design system, light/dark/auto theming, `motion` micro-animations |
 | **Database + Realtime** | **Supabase (Postgres)** | The engine itself: views, triggers, functions · websocket row-change push |
 | **Auth** | **Supabase Auth** | Email + password (verified) · one-time email codes (OTP) · Google OAuth · roles enforced by RLS |
 | **AI** | **Google Gemini (`gemini-flash-latest`)** | Grounded prompts over engine data, JSON mode, validated output |
@@ -233,23 +205,14 @@ The engine recently grew a second edge, a fourth surface, and a hardening pass.
 eightysix/
 ├── src/
 │   ├── app/
-│   │   ├── (auth)/                # Login + signup with one-click demo entry
+│   │   ├── (auth)/                # Login (password · email OTP · Google) + signup, one-click demo entry
 │   │   ├── auth/callback/         # OAuth + email-link redirect handler
 │   │   ├── r/[slug]/              # 📱 Diner menu — public, QR entry, cart, tracking, floor pings
 │   │   ├── kitchen/               # 👨‍🍳 Kitchen board — order queue + 86 stock board
 │   │   ├── waiter/                # 🛎️ Waiter floor view — table map, pings, 86 warnings
-│   │   ├── dashboard/             # 🖥️ Owner console (9 sections)
-│   │   │   ├── analytics/         #   7-day analytics + CSV export
-│   │   │   ├── bill/[orderId]/    #   GST billing + printable receipt
-│   │   │   ├── feedback/          #   Diner ratings + AI theme summary
-│   │   │   ├── inventory/         #   Ledger-audited stock management
-│   │   │   ├── menu/              #   Menu CRUD + live recipe editor
-│   │   │   ├── orders/            #   Orders board → billing
-│   │   │   ├── prep/              #   Prep-sheet forecaster + purchase order
-│   │   │   ├── qr/                #   Printable table QR codes
-│   │   │   ├── reservations/      #   Book → seat → complete lifecycle
-│   │   │   ├── staff/             #   Staff account management
-│   │   │   └── tables/            #   Floor & table status
+│   │   ├── dashboard/             # 🖥️ Owner console — 9 sections: orders → GST/UPI billing,
+│   │   │                          #    inventory, menu + recipes, prep, reservations, tables,
+│   │   │                          #    staff, analytics + CSV, feedback + AI themes, QRs
 │   │   ├── actions.ts             # ALL writes — 24 server actions (service role + role guards)
 │   │   └── page.tsx               # Product landing with animated dashboard mock
 │   ├── components/                # Brand, sidebar, rush controls, shadcn/ui kit
@@ -278,6 +241,7 @@ eightysix/
 
 ## 🔩 Engineering Highlights
 
+- **One order, ten reactions** — a single insert cascades through the ledger, stock, availability, predictions, kitchen queue, diner badges, analytics and the forecast — in real time, on four screens. Getting that graph provably right is the core of the build.
 - **Event-sourced inventory** — stock is never edited in place; a ledger + trigger folds events into state, so the overview shows a live audit trail.
 - **SQL-first engine** — availability, velocity, surplus and forecasting live in Postgres views/functions; the UI can't disagree with the database.
 - **Zero polling** — every screen subscribes to Supabase Realtime; one row change fans out to four surfaces, and every channel re-syncs on reconnect so a sleeping laptop catches up.
@@ -285,14 +249,9 @@ eightysix/
 - **Server-trusted money** — prices, totals and GST always come from database rows on the server; each order line freezes its `unit_price` at placement, so later price edits and specials can't rewrite bills or analytics.
 - **Defense in depth** — role-guarded routing (`proxy.ts`) + per-action auth checks + row-level security at the database, with orders re-validated against live availability at placement time and statuses moving forward-only.
 - **Deterministic status** — the red/amber/green banner is computed from the radar, never generated.
+- **AI off the critical path** — model narratives stream in behind the numbers; no page ever blocks on Gemini.
+- **Co-located compute** — functions are pinned to the database's region: a console page is a handful of ~5ms queries, not cross-continent round trips.
 - **Timezone-honest analytics** — day/hour buckets pin to IST on server and client alike, so a UTC deploy shows the same numbers a Delhi restaurant lives by.
-
-## 🧗 Technical Challenges Solved
-
-- **One order, ten reactions** — a single insert must correctly cascade through the ledger, stock, availability, predictions, kitchen queue, diner badges, analytics and prep forecast — in real time, on four screens. Getting that graph right (and provably right) was the core of the build.
-- **Predicting from a sliding window** — velocity decays with time, not just events, so risk recomputes on both realtime triggers and a clock tick.
-- **Demo integrity** — the rush simulator uses the identical code path as real orders; a stable-ID reset restores the seed without breaking logins, realtime channels, or QR links.
-- **Prod-parity details** — UTC server rendering vs IST clients (hydration-safe timestamps), OAuth + email-link redirects across environments, RLS that stays strict while diners stay anonymous.
 
 ## 🤖 AI With Guardrails
 
