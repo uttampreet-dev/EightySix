@@ -11,6 +11,7 @@ import {
   type OrderStatus,
 } from "@/lib/engine";
 import { geminiJSON, geminiText } from "@/lib/gemini";
+import { requireStaff } from "@/lib/authz";
 
 type ActionResult<T = undefined> =
   | { ok: true; data?: T }
@@ -24,6 +25,16 @@ export async function placeOrder(
   if (items.length === 0) return { ok: false, error: "Your cart is empty." };
 
   const supabase = createAdminClient();
+
+  if (tableId) {
+    const { data: table } = await supabase
+      .from("tables")
+      .select("id")
+      .eq("id", tableId)
+      .eq("restaurant_id", restaurantId)
+      .maybeSingle();
+    if (!table) return { ok: false, error: "Table not found." };
+  }
 
   // Re-check availability at order time — the menu the diner sees may be stale.
   const availability = await getAvailability(supabase, restaurantId);
@@ -58,26 +69,42 @@ export async function placeOrder(
   return { ok: true, data: { orderId: order.id } };
 }
 
+const ORDER_FLOW: Record<OrderStatus, number> = {
+  placed: 0,
+  cooking: 1,
+  served: 2,
+  paid: 3,
+};
+
 export async function bumpOrderStatus(
   orderId: string,
   status: OrderStatus
 ): Promise<ActionResult> {
+  const auth = await requireStaff();
+  if (!auth.ok) return auth;
+
   const supabase = createAdminClient();
+  const { data: order, error: fetchError } = await supabase
+    .from("orders")
+    .select("status, table_id")
+    .eq("id", orderId)
+    .single();
+  if (fetchError) return { ok: false, error: fetchError.message };
+
+  // Forward-only: a stale click in one surface (kitchen bumping an order the
+  // console already billed) must never drag a paid order backwards.
+  if (ORDER_FLOW[status] <= ORDER_FLOW[order.status as OrderStatus])
+    return { ok: true };
+
   const { error } = await supabase
     .from("orders")
     .update({ status })
-    .eq("id", orderId);
+    .eq("id", orderId)
+    .eq("status", order.status);
   if (error) return { ok: false, error: error.message };
 
-  if (status === "served" || status === "paid") {
-    const { data: order } = await supabase
-      .from("orders")
-      .select("table_id")
-      .eq("id", orderId)
-      .single();
-    if (order?.table_id) {
-      await supabase.from("tables").update({ status: "free" }).eq("id", order.table_id);
-    }
+  if ((status === "served" || status === "paid") && order.table_id) {
+    await supabase.from("tables").update({ status: "free" }).eq("id", order.table_id);
   }
   return { ok: true };
 }
@@ -87,14 +114,19 @@ export async function adjustStock(
   kind: "out" | "low" | "restock",
   amount?: number
 ): Promise<ActionResult> {
+  const auth = await requireStaff();
+  if (!auth.ok) return auth;
+
   const supabase = createAdminClient();
 
   const { data: ingredient, error: fetchError } = await supabase
     .from("ingredients")
-    .select("stock_qty, reorder_level")
+    .select("stock_qty, reorder_level, restaurant_id")
     .eq("id", ingredientId)
     .single();
   if (fetchError) return { ok: false, error: fetchError.message };
+  if (auth.restaurantId && ingredient.restaurant_id !== auth.restaurantId)
+    return { ok: false, error: "Not your restaurant." };
 
   let delta: number;
   let reason: "manual" | "prep";
@@ -123,6 +155,9 @@ export async function updateIngredient(
   ingredientId: string,
   updates: { stockQty?: number; reorderLevel?: number }
 ): Promise<ActionResult> {
+  const auth = await requireStaff(["owner"]);
+  if (!auth.ok) return auth;
+
   const supabase = createAdminClient();
 
   if (updates.stockQty !== undefined) {
@@ -239,6 +274,9 @@ Return JSON: {"suggestions":[{"id":"<id from list>","reason":"<one short appetis
 export async function getMorningBrief(
   restaurantId: string
 ): Promise<ActionResult<{ brief: string }>> {
+  const auth = await requireStaff(["owner"]);
+  if (!auth.ok) return auth;
+
   const supabase = createAdminClient();
   try {
     const [orders, risk] = await Promise.all([
@@ -306,6 +344,9 @@ function weightedPick<T extends { name: string }>(items: T[]): T {
 export async function rushTick(
   restaurantId: string
 ): Promise<ActionResult<{ placed: string[] }>> {
+  const auth = await requireStaff(["owner"]);
+  if (!auth.ok) return auth;
+
   const supabase = createAdminClient();
 
   const availability = await getAvailability(supabase, restaurantId);
@@ -360,6 +401,9 @@ export async function interveneOnDish(
   dishId: string,
   kind: "restock" | "kill"
 ): Promise<ActionResult<{ summary: string }>> {
+  const auth = await requireStaff(["owner"]);
+  if (!auth.ok) return auth;
+
   const supabase = createAdminClient();
 
   if (kind === "kill") {
@@ -429,6 +473,9 @@ export async function planService(
   }>
 > {
   if (diners < 1 || diners > 1000) return { ok: false, error: "Diners must be 1–1000." };
+  const auth = await requireStaff(["owner"]);
+  if (!auth.ok) return auth;
+
   const supabase = createAdminClient();
 
   const [availability, { data: recipes }, { data: ingredients }] = await Promise.all([
@@ -532,11 +579,13 @@ export async function setDishActive(
   dishId: string,
   active: boolean
 ): Promise<ActionResult> {
+  const auth = await requireStaff(["owner", "kitchen"]);
+  if (!auth.ok) return auth;
+
   const supabase = createAdminClient();
-  const { error } = await supabase
-    .from("dishes")
-    .update({ is_active: active })
-    .eq("id", dishId);
+  let query = supabase.from("dishes").update({ is_active: active }).eq("id", dishId);
+  if (auth.restaurantId) query = query.eq("restaurant_id", auth.restaurantId);
+  const { error } = await query;
   if (error) return { ok: false, error: error.message };
   return { ok: true };
 }
@@ -559,15 +608,31 @@ export async function upsertDish(
   if (recipe.some((r) => r.qty <= 0))
     return { ok: false, error: "Recipe quantities must be positive." };
 
+  const auth = await requireStaff(["owner"]);
+  if (!auth.ok) return auth;
+
   const supabase = createAdminClient();
+
+  // Every client-supplied id must belong to this restaurant.
+  const { data: ownedIngredients } = await supabase
+    .from("ingredients")
+    .select("id")
+    .eq("restaurant_id", restaurantId)
+    .in("id", recipe.map((r) => r.ingredientId));
+  if ((ownedIngredients ?? []).length !== new Set(recipe.map((r) => r.ingredientId)).size)
+    return { ok: false, error: "Unknown ingredient in recipe." };
+
   let dishId = dish.id;
 
   if (dishId) {
-    const { error } = await supabase
+    const { data: updated, error } = await supabase
       .from("dishes")
       .update({ name: dish.name.trim(), price: dish.price, category: dish.category, veg: dish.veg })
-      .eq("id", dishId);
+      .eq("id", dishId)
+      .eq("restaurant_id", restaurantId)
+      .select("id");
     if (error) return { ok: false, error: error.message };
+    if (!updated || updated.length === 0) return { ok: false, error: "Dish not found." };
   } else {
     const { data, error } = await supabase
       .from("dishes")
@@ -613,6 +678,9 @@ export async function createIngredient(
   }
 ): Promise<ActionResult> {
   if (!ingredient.name.trim()) return { ok: false, error: "Ingredient needs a name." };
+  const auth = await requireStaff(["owner"]);
+  if (!auth.ok) return auth;
+
   const supabase = createAdminClient();
   const { error } = await supabase.from("ingredients").insert({
     restaurant_id: restaurantId,
@@ -662,7 +730,17 @@ export async function updateReservation(
     tableId?: string | null;
   }
 ): Promise<ActionResult> {
+  const auth = await requireStaff(["owner", "waiter"]);
+  if (!auth.ok) return auth;
+
   const supabase = createAdminClient();
+  const { data: existing, error: fetchError } = await supabase
+    .from("reservations")
+    .select("status, table_id")
+    .eq("id", reservationId)
+    .single();
+  if (fetchError) return { ok: false, error: fetchError.message };
+
   const payload: Record<string, unknown> = {};
   if (updates.status) payload.status = updates.status;
   if (updates.tableId !== undefined) payload.table_id = updates.tableId;
@@ -673,12 +751,25 @@ export async function updateReservation(
     .eq("id", reservationId);
   if (error) return { ok: false, error: error.message };
 
-  // Seating a party occupies its table; completing/cancelling frees it.
-  if (updates.status && updates.tableId !== undefined && updates.tableId) {
-    await supabase
-      .from("tables")
-      .update({ status: updates.status === "seated" ? "occupied" : "free" })
-      .eq("id", updates.tableId);
+  // Seating a party occupies its table; completing/cancelling frees it;
+  // moving a seated party frees the table it left behind.
+  const finalStatus = updates.status ?? existing.status;
+  const finalTable =
+    updates.tableId !== undefined ? updates.tableId : existing.table_id;
+
+  if (
+    existing.status === "seated" &&
+    existing.table_id &&
+    existing.table_id !== finalTable
+  ) {
+    await supabase.from("tables").update({ status: "free" }).eq("id", existing.table_id);
+  }
+  if (finalTable) {
+    if (finalStatus === "seated") {
+      await supabase.from("tables").update({ status: "occupied" }).eq("id", finalTable);
+    } else if (finalStatus === "completed" || finalStatus === "cancelled") {
+      await supabase.from("tables").update({ status: "free" }).eq("id", finalTable);
+    }
   }
   return { ok: true };
 }
@@ -717,10 +808,13 @@ export async function submitFeedback(
 export async function createStaff(
   email: string,
   password: string,
-  role: "owner" | "kitchen"
+  role: "owner" | "kitchen" | "waiter"
 ): Promise<ActionResult> {
   if (!/^\S+@\S+\.\S+$/.test(email)) return { ok: false, error: "Enter a valid email." };
   if (password.length < 8) return { ok: false, error: "Password needs 8+ characters." };
+  const auth = await requireStaff(["owner"]);
+  if (!auth.ok) return auth;
+
   const supabase = createAdminClient();
   const { error } = await supabase.auth.admin.createUser({
     email,
@@ -735,6 +829,9 @@ export async function createStaff(
 export async function getFeedbackSummary(
   restaurantId: string
 ): Promise<ActionResult<{ summary: string }>> {
+  const auth = await requireStaff(["owner"]);
+  if (!auth.ok) return auth;
+
   const supabase = createAdminClient();
   const { data: rows } = await supabase
     .from("feedback")
@@ -757,13 +854,193 @@ ${rows.map((r) => `${r.rating}/5${r.comment ? ` — "${r.comment}"` : ""}`).join
 }
 
 export async function resetDemo(): Promise<ActionResult> {
+  const auth = await requireStaff(["owner"]);
+  if (!auth.ok) return auth;
+
   const supabase = createAdminClient();
   const { error } = await supabase.rpc("reset_demo");
   if (error) return { ok: false, error: error.message };
   return { ok: true };
 }
 
+// Diner → floor staff. Deduped so a nervous double-tap doesn't page twice.
+export async function callWaiter(
+  restaurantId: string,
+  tableId: string,
+  kind: "waiter" | "bill"
+): Promise<ActionResult> {
+  const supabase = createAdminClient();
+
+  const { data: table } = await supabase
+    .from("tables")
+    .select("id")
+    .eq("id", tableId)
+    .eq("restaurant_id", restaurantId)
+    .maybeSingle();
+  if (!table) return { ok: false, error: "Table not found." };
+
+  const { data: existing } = await supabase
+    .from("service_calls")
+    .select("id")
+    .eq("table_id", tableId)
+    .eq("kind", kind)
+    .eq("status", "open")
+    .maybeSingle();
+  if (existing) return { ok: true }; // already paged — the floor sees it
+
+  const { error } = await supabase
+    .from("service_calls")
+    .insert({ restaurant_id: restaurantId, table_id: tableId, kind });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+export async function resolveServiceCall(callId: string): Promise<ActionResult> {
+  const auth = await requireStaff();
+  if (!auth.ok) return auth;
+
+  const supabase = createAdminClient();
+  const { error } = await supabase
+    .from("service_calls")
+    .update({ status: "done" })
+    .eq("id", callId);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+const SPECIAL_HOURS = 3;
+
+// The surplus intervention: scarcity gets a restock, surplus gets a special.
+// One tap picks the available dish that uses the most of the overstocked
+// ingredient, cuts its price, and fans the special out to every menu live.
+export async function runSpecial(
+  ingredientId: string
+): Promise<ActionResult<{ summary: string }>> {
+  const auth = await requireStaff(["owner"]);
+  if (!auth.ok) return auth;
+
+  const supabase = createAdminClient();
+
+  const { data: ingredient, error: ingError } = await supabase
+    .from("ingredients")
+    .select("id, restaurant_id, name, unit, stock_qty")
+    .eq("id", ingredientId)
+    .single();
+  if (ingError) return { ok: false, error: ingError.message };
+
+  const { data: uses } = await supabase
+    .from("recipe_items")
+    .select("dish_id, qty_per_portion")
+    .eq("ingredient_id", ingredientId);
+  if (!uses || uses.length === 0)
+    return { ok: false, error: "No dish uses this ingredient." };
+
+  const availability = await getAvailability(supabase, ingredient.restaurant_id);
+  const byId = new Map(availability.map((d) => [d.id, d]));
+  const candidate = uses
+    .map((u) => ({ dish: byId.get(u.dish_id), perPortion: Number(u.qty_per_portion) }))
+    .filter(
+      (c) =>
+        c.dish &&
+        c.dish.is_active &&
+        c.dish.portions_left > 0 &&
+        c.dish.regular_price === null
+    )
+    .sort((a, b) => b.perPortion - a.perPortion)[0];
+  if (!candidate?.dish)
+    return {
+      ok: false,
+      error: `No available dish without a running special uses ${ingredient.name}.`,
+    };
+
+  const dish = candidate.dish;
+  let specialPrice = Math.floor((dish.price * 0.85) / 5) * 5;
+  if (dish.price - specialPrice < 10) specialPrice = dish.price - 10;
+  if (specialPrice <= 0) return { ok: false, error: "Dish is too cheap to discount." };
+
+  let note: string;
+  try {
+    note = (
+      await geminiText(
+        `Write ONE short appetising menu line (max 12 words, plain text, no quotes, no emoji) announcing a chef's special at a North Indian restaurant: "${dish.name}" now ₹${specialPrice} (was ₹${dish.price}), featuring fresh ${ingredient.name.toLowerCase()}.`
+      )
+    ).trim();
+  } catch {
+    note = `Chef's special — ₹${dish.price - specialPrice} off today.`;
+  }
+
+  const until = new Date(Date.now() + SPECIAL_HOURS * 3600_000).toISOString();
+  const { error } = await supabase
+    .from("dishes")
+    .update({
+      regular_price: dish.price,
+      price: specialPrice,
+      special_note: note,
+      special_until: until,
+    })
+    .eq("id", dish.id);
+  if (error) return { ok: false, error: error.message };
+
+  return {
+    ok: true,
+    data: {
+      summary: `${dish.name} is now the chef's special — ₹${specialPrice} (was ₹${dish.price}). Every menu updated; surplus ${ingredient.name.toLowerCase()} starts moving.`,
+    },
+  };
+}
+
+export async function endSpecial(dishId: string): Promise<ActionResult> {
+  const auth = await requireStaff(["owner"]);
+  if (!auth.ok) return auth;
+
+  const supabase = createAdminClient();
+  const { data: dish, error: fetchError } = await supabase
+    .from("dishes")
+    .select("regular_price")
+    .eq("id", dishId)
+    .single();
+  if (fetchError) return { ok: false, error: fetchError.message };
+  if (dish.regular_price === null) return { ok: true };
+
+  const { error } = await supabase
+    .from("dishes")
+    .update({
+      price: dish.regular_price,
+      regular_price: null,
+      special_note: null,
+      special_until: null,
+    })
+    .eq("id", dishId);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+// Lazy expiry: called on console loads so a special never outlives its window.
+export async function clearExpiredSpecials(restaurantId: string): Promise<void> {
+  const supabase = createAdminClient();
+  const { data: expired } = await supabase
+    .from("dishes")
+    .select("id, regular_price")
+    .eq("restaurant_id", restaurantId)
+    .not("regular_price", "is", null)
+    .lt("special_until", new Date().toISOString());
+  for (const dish of expired ?? []) {
+    await supabase
+      .from("dishes")
+      .update({
+        price: dish.regular_price,
+        regular_price: null,
+        special_note: null,
+        special_until: null,
+      })
+      .eq("id", dish.id);
+  }
+}
+
 export async function toggleTableStatus(tableId: string): Promise<ActionResult> {
+  const auth = await requireStaff(["owner", "waiter"]);
+  if (!auth.ok) return auth;
+
   const supabase = createAdminClient();
   const { data: table, error: fetchError } = await supabase
     .from("tables")

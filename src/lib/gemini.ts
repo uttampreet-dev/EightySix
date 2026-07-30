@@ -17,6 +17,8 @@ async function generate(prompt: string, json: boolean): Promise<string> {
         ...(json ? { responseMimeType: "application/json" } : {}),
       },
     }),
+    // a hung upstream must fail fast into the deterministic fallbacks
+    signal: AbortSignal.timeout(8000),
   });
 
   if (!res.ok) {
