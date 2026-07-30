@@ -9,6 +9,7 @@ import {
   useTransform,
   type MotionValue,
 } from "motion/react";
+import { Menu, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Brand } from "@/components/brand";
@@ -304,7 +305,7 @@ function LifecycleMock() {
     { label: "", cls: "opacity-50 saturate-0", badge: "86'd" },
   ];
   return (
-    <div className="flex items-center justify-center gap-4">
+    <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-4">
       {states.map((s, i) => (
         <div key={i} className="flex items-center gap-4">
           <motion.div
@@ -313,7 +314,7 @@ function LifecycleMock() {
               opacity: step === i ? 1 : 0.45,
             }}
             transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-            className={`w-40 rounded-lg border bg-card p-3.5 ${s.cls}`}
+            className={`w-32 rounded-lg border bg-card p-3 sm:w-40 sm:p-3.5 ${s.cls}`}
           >
             <p
               className={`font-serif text-sm ${i === 2 ? "line-through decoration-brass/70" : ""}`}
@@ -334,7 +335,7 @@ function LifecycleMock() {
               </Badge>
             )}
           </motion.div>
-          {i < 2 && <span className="text-muted-foreground/40">→</span>}
+          {i < 2 && <span className="hidden text-muted-foreground/40 sm:inline">→</span>}
         </div>
       ))}
     </div>
@@ -461,11 +462,12 @@ const PROOF = [
   { k: "30 min", v: "rolling velocity window behind every prediction" },
   { k: "min()", v: "availability = the scarcest ingredient in the recipe" },
   { k: "45 min", v: "warning before a dish dies, while you can still act" },
-  { k: "3", v: "surfaces — menu, kitchen, console — reading one live engine" },
+  { k: "4", v: "surfaces — menu, kitchen, floor, console — reading one live engine" },
 ];
 
 export function LandingClient() {
   const { ref: tiltRef, rx, ry, onMove, onLeave } = useTilt();
+  const [navOpen, setNavOpen] = useState(false);
 
   return (
     <div className="relative flex flex-1 flex-col overflow-hidden">
@@ -493,14 +495,41 @@ export function LandingClient() {
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
-            <Button asChild variant="ghost" size="sm">
-              <Link href="/login">Staff sign in</Link>
-            </Button>
-            <Button asChild size="sm">
-              <Link href="/r/demo">Open live demo</Link>
-            </Button>
+            <div className="hidden items-center gap-2 sm:flex">
+              <Button asChild variant="ghost" size="sm">
+                <Link href="/login">Staff sign in</Link>
+              </Button>
+              <Button asChild size="sm">
+                <Link href="/r/demo">Open live demo</Link>
+              </Button>
+            </div>
+            <button
+              type="button"
+              aria-label={navOpen ? "Close menu" : "Open menu"}
+              onClick={() => setNavOpen((o) => !o)}
+              className="flex h-9 w-9 items-center justify-center rounded-md border border-border/70 sm:hidden"
+            >
+              {navOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+            </button>
           </div>
         </div>
+        {navOpen && (
+          <div className="border-t border-border/60 bg-background/95 px-6 py-4 backdrop-blur-md sm:hidden">
+            <div className="grid grid-cols-2 gap-2">
+              <Button asChild size="sm" className="w-full">
+                <Link href="/r/demo">Live diner menu</Link>
+              </Button>
+              <DemoEntryButton role="owner" label="Owner console" variant="secondary" className="w-full !h-8 !text-sm" />
+              <DemoEntryButton role="kitchen" label="Kitchen" className="w-full !h-8 !text-sm" />
+              <DemoEntryButton role="waiter" label="Waiter" className="w-full !h-8 !text-sm" />
+            </div>
+            <div className="mt-3 flex items-center justify-between border-t border-border/60 pt-3 font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+              <a href="#product" onClick={() => setNavOpen(false)}>Product</a>
+              <a href="#numbers" onClick={() => setNavOpen(false)}>Engine</a>
+              <Link href="/login" onClick={() => setNavOpen(false)}>Staff sign in</Link>
+            </div>
+          </div>
+        )}
       </nav>
 
       <main className="relative z-10 flex flex-1 flex-col">
@@ -531,15 +560,15 @@ export function LandingClient() {
               before your diners ever hit a dead end.
             </p>
             <div
-              className="animate-fade-up mt-8 grid w-full max-w-md grid-cols-1 gap-3 sm:grid-cols-2"
+              className="animate-fade-up mt-8 grid w-full max-w-md grid-cols-2 gap-3"
               style={{ animationDelay: "270ms" }}
             >
               <DemoEntryButton role="owner" label="Open the owner console" variant="default" className="w-full" />
               <Button asChild size="lg" variant="outline" className="w-full">
                 <Link href="/r/demo">Live diner menu</Link>
               </Button>
-              <DemoEntryButton role="kitchen" label="Enter as kitchen" className="w-full" />
-              <DemoEntryButton role="waiter" label="Enter as waiter" className="w-full" />
+              <DemoEntryButton role="kitchen" label="Enter as kitchen" className="hidden w-full sm:inline-flex" />
+              <DemoEntryButton role="waiter" label="Enter as waiter" className="hidden w-full sm:inline-flex" />
             </div>
             <p
               className="animate-fade-up mt-5 font-mono text-[11px] tracking-wider text-muted-foreground/70"
@@ -568,7 +597,7 @@ export function LandingClient() {
             {FEATURES.map((f, i) => (
               <div
                 key={f.eyebrow}
-                className={`grid items-center gap-10 lg:grid-cols-2 ${
+                className={`grid min-w-0 items-center gap-10 lg:grid-cols-2 [&>*]:min-w-0 ${
                   i % 2 === 1 ? "lg:[&>*:first-child]:order-2" : ""
                 }`}
               >
